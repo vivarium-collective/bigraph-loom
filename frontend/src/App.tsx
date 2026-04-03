@@ -503,7 +503,7 @@ function AppInner() {
           <span className="header-sep" />
           <button className="header-btn" onClick={handleNew}>New</button>
           <button className="header-btn" onClick={handleImport}>Import</button>
-          <button className="header-btn" onClick={exportPbg}>Export</button>
+          <button className="header-btn" onClick={() => exportPbg(getViewState())}>Export</button>
           <span className="header-sep" />
           <div className="panel-tabs">
             <button

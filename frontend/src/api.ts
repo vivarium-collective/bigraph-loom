@@ -86,13 +86,18 @@ export async function fetchProcessSource(address: string): Promise<ProcessInfo> 
   return res.json();
 }
 
-export function exportPbg(): void {
+export async function exportPbg(viewState?: ViewState): Promise<void> {
+  const res = await fetch(`${BASE}/state`);
+  const data = await res.json();
+  const payload: Record<string, unknown> = { state: data.state };
+  if (data.schema) payload.schema = data.schema;
+  if (viewState) payload.view_state = viewState;
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
   const a = document.createElement("a");
-  a.href = `${BASE}/export`;
+  a.href = URL.createObjectURL(blob);
   a.download = "bigraph.pbg";
-  document.body.appendChild(a);
   a.click();
-  document.body.removeChild(a);
+  URL.revokeObjectURL(a.href);
 }
 
 // ── View state ──────────────────────────────────────────────────────────────

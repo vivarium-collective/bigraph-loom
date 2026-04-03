@@ -8,5 +8,5 @@ frontend/dist/
 .git/
 .idea/
 out/
-docs/
+docs/*.png
 *.log
