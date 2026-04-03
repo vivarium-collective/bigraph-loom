@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "bigraph-loom"
+version = "0.1.0"
+description = "Interactive visual editor for process-bigraphs"
+requires-python = ">=3.11"
+license = "Apache-2.0"
+dependencies = [
+    "fastapi>=0.110",
+    "uvicorn[standard]>=0.29",
+    "process-bigraph>=1.0.0",
+    "bigraph-schema>=1.0.0",
+    "python-multipart>=0.0.9",
+]
+
+[project.optional-dependencies]
+jupyter = ["jupyter", "ipython"]
+dev = ["pytest", "httpx"]
+
+[tool.setuptools.packages.find]
+include = ["bigraph_loom*"]
+
+[project.scripts]
+bigraph-loom = "bigraph_loom.server:main"
