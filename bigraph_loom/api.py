@@ -218,6 +218,41 @@ def get_state() -> dict:
     return {"state": _state, "schema": _schema}
 
 
+class UpdateStateRequest(BaseModel):
+    state: dict[str, Any]
+    schema_: dict[str, Any] | None = None
+    validate: bool = True
+
+
+@app.put("/api/state")
+def put_state(req: UpdateStateRequest) -> dict:
+    """Replace the full bigraph state. Optionally validates first."""
+    global _state, _schema
+
+    # Validate against schema if requested and schema exists
+    errors: list[str] = []
+    if req.validate:
+        try:
+            core = _get_core()
+            schema = req.schema_ or _schema or {}
+            if schema:
+                valid = core.check(schema, req.state)
+                if not valid:
+                    errors.append("State does not match schema")
+        except Exception as e:
+            errors.append(f"Validation error: {e}")
+
+    if errors:
+        return {"ok": False, "errors": errors}
+
+    warnings = _check_unregistered_processes(req.state)
+    _state = copy.deepcopy(req.state)
+    if req.schema_ is not None:
+        _schema = copy.deepcopy(req.schema_)
+
+    return {"ok": True, "warnings": warnings, "errors": []}
+
+
 @app.get("/api/export")
 def export_pbg() -> Response:
     """Export the full bigraph as a downloadable .pbg JSON file."""

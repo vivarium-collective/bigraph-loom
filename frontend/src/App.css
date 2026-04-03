@@ -935,3 +935,112 @@ body {
   white-space: pre;
   font-family: "SF Mono", Menlo, Monaco, monospace;
 }
+
+/* ── JSON editor panel ───────────────────────────────────────────────── */
+
+.json-panel {
+  width: 420px;
+  background: #ffffff;
+  border-left: 1px solid #e2e8f0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.json-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  border-bottom: 1px solid #e2e8f0;
+  flex-shrink: 0;
+}
+
+.json-panel-header h4 {
+  font-size: 13px;
+  color: #1e293b;
+  margin: 0;
+}
+
+.json-panel-actions {
+  display: flex;
+  gap: 4px;
+}
+
+.json-btn {
+  padding: 4px 10px;
+  border: 1px solid #e2e8f0;
+  border-radius: 3px;
+  font-size: 11px;
+  cursor: pointer;
+  background: #f8fafc;
+  color: #475569;
+}
+
+.json-btn:hover {
+  background: #f1f5f9;
+}
+
+.json-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.json-btn-validate {
+  background: #eef2ff;
+  border-color: #c7d2fe;
+  color: #4f46e5;
+}
+
+.json-btn-validate:hover {
+  background: #e0e7ff;
+}
+
+.json-btn-apply {
+  background: #ecfdf5;
+  border-color: #a7f3d0;
+  color: #059669;
+}
+
+.json-btn-apply:hover {
+  background: #d1fae5;
+}
+
+.json-status {
+  padding: 6px 12px;
+  font-size: 11px;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+.json-status-error {
+  background: #fef2f2;
+  color: #dc2626;
+  border-bottom: 1px solid #fecaca;
+}
+
+.json-status-warning {
+  background: #fef3c7;
+  color: #92400e;
+  border-bottom: 1px solid #fcd34d;
+}
+
+.json-status-success {
+  background: #ecfdf5;
+  color: #059669;
+  border-bottom: 1px solid #a7f3d0;
+}
+
+.json-editor-container {
+  flex: 1;
+  overflow: auto;
+}
+
+.json-editor-container .cm-editor {
+  height: 100%;
+}
+
+.json-editor-container .cm-scroller {
+  font-family: "SF Mono", Menlo, Monaco, monospace;
+  font-size: 12px;
+}

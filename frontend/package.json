@@ -9,7 +9,9 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@codemirror/lang-json": "^6.0.2",
     "@dagrejs/dagre": "^1.1.4",
+    "@uiw/react-codemirror": "^4.25.9",
     "@xyflow/react": "^12.4.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"

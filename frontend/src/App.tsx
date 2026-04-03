@@ -17,6 +17,7 @@ import ProcessNode from "./nodes/ProcessNode";
 import GroupNode from "./nodes/GroupNode";
 import InspectorPanel from "./panels/InspectorPanel";
 import AddPanel from "./panels/AddPanel";
+import JsonPanel from "./panels/JsonPanel";
 import {
   fetchGraph,
   exportPbg,
@@ -36,7 +37,7 @@ const nodeTypes = {
   group: GroupNode,
 };
 
-type SidePanel = "inspect" | "add";
+type SidePanel = "inspect" | "add" | "json";
 
 export default function App() {
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
@@ -280,6 +281,12 @@ export default function App() {
           >
             + Add
           </button>
+          <button
+            className={`header-btn ${sidePanel === "json" ? "header-btn-active" : ""}`}
+            onClick={() => setSidePanel(sidePanel === "json" ? "inspect" : "json")}
+          >
+            JSON
+          </button>
           {checkResult && (
             <span className={`check-badge ${checkResult.valid ? "check-ok" : "check-fail"}`}>
               {checkResult.valid ? "Valid" : checkResult.error || "Invalid"}
@@ -354,8 +361,10 @@ export default function App() {
             groupNodes={nodes.filter((n) => n.type === "group" || (n.data as any)?.isGroup)}
             allStoreNodes={nodes.filter((n) => n.type !== "process")}
           />
-        ) : (
+        ) : sidePanel === "add" ? (
           <AddPanel storePaths={storePaths} onUpdate={loadGraph} />
+        ) : (
+          <JsonPanel onUpdate={loadGraph} />
         )}
       </div>
     </div>
