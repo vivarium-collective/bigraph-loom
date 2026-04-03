@@ -2,15 +2,9 @@
 
 from __future__ import annotations
 
-import os
-from pathlib import Path
-
 import uvicorn
-from fastapi.staticfiles import StaticFiles
 
 from bigraph_loom.api import app, load_bigraph, set_core
-
-FRONTEND_DIR = Path(__file__).parent.parent / "frontend" / "dist"
 
 
 def run_server(
@@ -35,10 +29,6 @@ def run_server(
         set_core(core)
     if state:
         load_bigraph(state, schema)
-
-    # Serve built frontend if it exists
-    if FRONTEND_DIR.is_dir():
-        app.mount("/", StaticFiles(directory=str(FRONTEND_DIR), html=True), name="frontend")
 
     if open_browser:
         import webbrowser

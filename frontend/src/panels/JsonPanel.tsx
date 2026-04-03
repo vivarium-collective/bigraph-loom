@@ -60,7 +60,7 @@ export default function JsonPanel({ onUpdate }: Props) {
       const res = await fetch(`${BASE}/state`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ state, schema_: schema, validate: true }),
+        body: JSON.stringify({ state, schema_: schema, run_check: true }),
       });
       const data = await res.json();
 
@@ -94,7 +94,7 @@ export default function JsonPanel({ onUpdate }: Props) {
       const res = await fetch(`${BASE}/state`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ state, schema_: schema, validate: false }),
+        body: JSON.stringify({ state, schema_: schema, run_check: false }),
       });
       const data = await res.json();
 

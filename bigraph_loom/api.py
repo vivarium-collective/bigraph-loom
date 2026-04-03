@@ -8,27 +8,44 @@ import json
 import textwrap
 from typing import Any, Literal
 
-from fastapi import FastAPI, File, HTTPException, Query, UploadFile
+from fastapi import Cookie, FastAPI, File, HTTPException, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import Response
+from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel
 
 from bigraph_loom.convert import bigraph_to_flow, ViewMode, normalize_address, is_process
+from bigraph_loom.session import Session, sessions
 
 app = FastAPI(title="Bigraph Loom", version="0.1.0")
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# ── In-memory state ──────────────────────────────────────────────────────────
+SESSION_COOKIE = "bgloom_sid"
 
-_state: dict[str, Any] = {}
-_schema: dict[str, Any] | None = None
-_core: Any = None  # bigraph_schema Core instance
+# ── Shared Core (read-only, all sessions share one) ─────────────────────────
+
+_core: Any = None
+
+
+def set_core(core: Any) -> None:
+    """Set the shared Core instance (with registered processes and types)."""
+    global _core
+    _core = core
+
+
+def _get_core() -> Any:
+    """Return the shared Core, allocating a default one if needed."""
+    global _core
+    if _core is None:
+        from process_bigraph import allocate_core
+        _core = allocate_core()
+    return _core
 
 
 def load_bigraph(
@@ -36,28 +53,55 @@ def load_bigraph(
     schema: dict | None = None,
     core: Any = None,
 ) -> None:
-    """Load a bigraph state (and optional schema/core) into the server."""
-    global _state, _schema, _core
-    _state = copy.deepcopy(state)
-    _schema = copy.deepcopy(schema) if schema else None
+    """Set the default bigraph state for new sessions, and optionally set Core."""
     if core is not None:
-        _core = core
+        set_core(core)
+    sessions.set_defaults(state, schema)
 
 
-def set_core(core: Any) -> None:
-    """Set the Core instance (with registered processes and types)."""
-    global _core
-    _core = core
+# ── Session helpers ──────────────────────────────────────────────────────────
+
+def _get_session(sid: str | None) -> tuple[Session, str]:
+    """Get session by cookie value, or create a new one."""
+    if sid:
+        return sessions.get(sid), sid
+    new_sid = sessions.create()
+    return sessions.get(new_sid), new_sid
 
 
-def _get_core() -> Any:
-    """Return the current Core, allocating a default one if needed."""
-    global _core
-    if _core is None:
-        from process_bigraph import allocate_core
-        _core = allocate_core()
-    return _core
+def _session_response(data: dict, sid: str) -> JSONResponse:
+    """Return JSON with session cookie set."""
+    resp = JSONResponse(content=data)
+    resp.set_cookie(
+        SESSION_COOKIE, sid,
+        httponly=True, samesite="lax", max_age=3600,
+    )
+    return resp
 
+
+# ── Periodic cleanup ─────────────────────────────────────────────────────────
+
+@app.on_event("startup")
+async def _startup():
+    import asyncio
+    from pathlib import Path
+    from fastapi.staticfiles import StaticFiles
+
+    # Mount built frontend if it exists (for Docker / production)
+    frontend_dir = Path(__file__).parent.parent / "frontend" / "dist"
+    if frontend_dir.is_dir():
+        app.mount("/", StaticFiles(directory=str(frontend_dir), html=True), name="frontend")
+
+    # Start session cleanup loop
+    async def _cleanup_loop():
+        while True:
+            await asyncio.sleep(300)
+            sessions.cleanup()
+
+    asyncio.create_task(_cleanup_loop())
+
+
+# ── Process info helper ──────────────────────────────────────────────────────
 
 def _process_info(name: str, core: Any) -> dict[str, Any]:
     """Extract rich info about a registered process class."""
@@ -70,14 +114,12 @@ def _process_info(name: str, core: Any) -> dict[str, Any]:
     try:
         cls = core.link_registry[name]
     except (KeyError, TypeError):
-        info["registered"] = False
         return info
 
     info["registered"] = True
     info["class"] = f"{cls.__module__}.{cls.__qualname__}"
     info["module"] = getattr(cls, "__module__", None)
 
-    # Source location
     try:
         info["source_file"] = inspect.getfile(cls)
         info["source_line"] = inspect.getsourcelines(cls)[1]
@@ -85,10 +127,8 @@ def _process_info(name: str, core: Any) -> dict[str, Any]:
         info["source_file"] = None
         info["source_line"] = None
 
-    # config_schema
     info["config_schema"] = _safe_serialize(getattr(cls, "config_schema", {}))
 
-    # Interface (port types)
     try:
         instance = cls({}, core=core)
         info["inputs"] = _safe_serialize(instance.inputs())
@@ -97,14 +137,12 @@ def _process_info(name: str, core: Any) -> dict[str, Any]:
         info["inputs"] = {}
         info["outputs"] = {}
 
-    # Update function info
     try:
         update_method = cls.update
         info["update_signature"] = str(inspect.signature(update_method))
         try:
             source = inspect.getsource(update_method)
             info["update_source"] = textwrap.dedent(source)
-            # Extract just the docstring if present
             doc = inspect.getdoc(update_method)
             if doc:
                 info["update_docstring"] = doc
@@ -117,7 +155,6 @@ def _process_info(name: str, core: Any) -> dict[str, Any]:
 
 
 def _safe_serialize(obj: Any) -> Any:
-    """Convert an object to JSON-safe form."""
     if isinstance(obj, dict):
         return {str(k): _safe_serialize(v) for k, v in obj.items()}
     if isinstance(obj, (list, tuple)):
@@ -127,17 +164,22 @@ def _safe_serialize(obj: Any) -> Any:
     return str(obj)
 
 
-# ── Request / response models ────────────────────────────────────────────────
+# ── Request models ───────────────────────────────────────────────────────────
 
 class LoadRequest(BaseModel):
     model_config = {"populate_by_name": True}
-
     state: dict[str, Any]
     schema_: dict[str, Any] | None = None
 
 
 class UpdateValueRequest(BaseModel):
     value: Any
+
+
+class UpdateStateRequest(BaseModel):
+    state: dict[str, Any]
+    schema_: dict[str, Any] | None = None
+    run_check: bool = True
 
 
 class AddProcessRequest(BaseModel):
@@ -171,7 +213,7 @@ class RewireRequest(BaseModel):
     new_target: list[str]
 
 
-# ── Helpers ──────────────────────────────────────────────────────────────────
+# ── Path helpers ─────────────────────────────────────────────────────────────
 
 def _get_at_path(d: dict, path: list[str]) -> Any:
     current = d
@@ -204,102 +246,10 @@ def _delete_at_path(d: dict, path: list[str]) -> None:
     del current[path[-1]]
 
 
-# ── Routes ───────────────────────────────────────────────────────────────────
-
-@app.get("/api/graph")
-def get_graph(view: ViewMode = Query("nested")) -> dict:
-    """Return the full bigraph as React Flow nodes and edges."""
-    return bigraph_to_flow(_state, schema=_schema, view=view)
-
-
-@app.get("/api/state")
-def get_state() -> dict:
-    """Return the raw bigraph state."""
-    return {"state": _state, "schema": _schema}
-
-
-class UpdateStateRequest(BaseModel):
-    state: dict[str, Any]
-    schema_: dict[str, Any] | None = None
-    validate: bool = True
-
-
-@app.put("/api/state")
-def put_state(req: UpdateStateRequest) -> dict:
-    """Replace the full bigraph state. Optionally validates first."""
-    global _state, _schema
-
-    # Validate against schema if requested and schema exists
-    errors: list[str] = []
-    if req.validate:
-        try:
-            core = _get_core()
-            schema = req.schema_ or _schema or {}
-            if schema:
-                valid = core.check(schema, req.state)
-                if not valid:
-                    errors.append("State does not match schema")
-        except Exception as e:
-            errors.append(f"Validation error: {e}")
-
-    if errors:
-        return {"ok": False, "errors": errors}
-
-    warnings = _check_unregistered_processes(req.state)
-    _state = copy.deepcopy(req.state)
-    if req.schema_ is not None:
-        _schema = copy.deepcopy(req.schema_)
-
-    return {"ok": True, "warnings": warnings, "errors": []}
-
-
-@app.get("/api/export")
-def export_pbg() -> Response:
-    """Export the full bigraph as a downloadable .pbg JSON file."""
-    payload: dict[str, Any] = {"state": _state}
-    if _schema:
-        payload["schema"] = _schema
-    content = json.dumps(payload, indent=2, default=str)
-    return Response(
-        content=content,
-        media_type="application/json",
-        headers={"Content-Disposition": "attachment; filename=bigraph.pbg"},
-    )
-
-
-@app.post("/api/import")
-async def import_pbg(file: UploadFile = File(...)) -> dict:
-    """Import a .pbg file and load it as the current bigraph."""
-    try:
-        content = await file.read()
-        data = json.loads(content)
-    except (json.JSONDecodeError, UnicodeDecodeError) as e:
-        raise HTTPException(400, f"Invalid JSON file: {e}")
-
-    state = data.get("state", data)  # Support both {state: ...} and raw state dicts
-    schema = data.get("schema", None)
-
-    # Check which processes in the state are registered in the Core
-    warnings = _check_unregistered_processes(state)
-
-    load_bigraph(state, schema)
-    return {"ok": True, "warnings": warnings}
-
-
-@app.post("/api/load")
-def post_load(req: LoadRequest) -> dict:
-    """Load a new bigraph state."""
-    warnings = _check_unregistered_processes(req.state)
-    load_bigraph(req.state, req.schema_)
-    return {"ok": True, "warnings": warnings}
-
-
 def _check_unregistered_processes(state: dict, path: tuple = ()) -> list[dict]:
-    """Walk state and find processes whose address is not in the Core registry."""
     warnings: list[dict] = []
     if not isinstance(state, dict):
         return warnings
-
     core = _get_core()
     for key, value in state.items():
         if key.startswith("_"):
@@ -316,40 +266,131 @@ def _check_unregistered_processes(state: dict, path: tuple = ()) -> list[dict]:
                 })
         elif isinstance(value, dict):
             warnings.extend(_check_unregistered_processes(value, node_path))
-
     return warnings
 
 
+# ── Session-scoped routes ────────────────────────────────────────────────────
+
+@app.get("/api/graph")
+def get_graph(
+    view: ViewMode = Query("nested"),
+    bgloom_sid: str | None = Cookie(None),
+):
+    sess, sid = _get_session(bgloom_sid)
+    data = bigraph_to_flow(sess.state, schema=sess.schema, view=view)
+    return _session_response(data, sid)
+
+
+@app.get("/api/state")
+def get_state(bgloom_sid: str | None = Cookie(None)):
+    sess, sid = _get_session(bgloom_sid)
+    return _session_response({"state": sess.state, "schema": sess.schema}, sid)
+
+
+@app.put("/api/state")
+def put_state(req: UpdateStateRequest, bgloom_sid: str | None = Cookie(None)):
+    sess, sid = _get_session(bgloom_sid)
+
+    errors: list[str] = []
+    if req.run_check:
+        try:
+            core = _get_core()
+            schema = req.schema_ or sess.schema or {}
+            if schema:
+                valid = core.check(schema, req.state)
+                if not valid:
+                    errors.append("State does not match schema")
+        except Exception as e:
+            errors.append(f"Validation error: {e}")
+
+    if errors:
+        return _session_response({"ok": False, "errors": errors}, sid)
+
+    warnings = _check_unregistered_processes(req.state)
+    sess.state = copy.deepcopy(req.state)
+    if req.schema_ is not None:
+        sess.schema = copy.deepcopy(req.schema_)
+    return _session_response({"ok": True, "warnings": warnings, "errors": []}, sid)
+
+
+@app.get("/api/export")
+def export_pbg(bgloom_sid: str | None = Cookie(None)):
+    sess, sid = _get_session(bgloom_sid)
+    payload: dict[str, Any] = {"state": sess.state}
+    if sess.schema:
+        payload["schema"] = sess.schema
+    content = json.dumps(payload, indent=2, default=str)
+    resp = Response(
+        content=content,
+        media_type="application/json",
+        headers={"Content-Disposition": "attachment; filename=bigraph.pbg"},
+    )
+    resp.set_cookie(SESSION_COOKIE, sid, httponly=True, samesite="lax", max_age=3600)
+    return resp
+
+
+@app.post("/api/import")
+async def import_pbg(
+    file: UploadFile = File(...),
+    bgloom_sid: str | None = Cookie(None),
+):
+    sess, sid = _get_session(bgloom_sid)
+    try:
+        content = await file.read()
+        data = json.loads(content)
+    except (json.JSONDecodeError, UnicodeDecodeError) as e:
+        raise HTTPException(400, f"Invalid JSON file: {e}")
+
+    state = data.get("state", data)
+    schema = data.get("schema", None)
+    warnings = _check_unregistered_processes(state)
+
+    sess.state = copy.deepcopy(state)
+    sess.schema = copy.deepcopy(schema) if schema else sess.schema
+    return _session_response({"ok": True, "warnings": warnings}, sid)
+
+
+@app.post("/api/load")
+def post_load(req: LoadRequest, bgloom_sid: str | None = Cookie(None)):
+    sess, sid = _get_session(bgloom_sid)
+    warnings = _check_unregistered_processes(req.state)
+    sess.state = copy.deepcopy(req.state)
+    sess.schema = copy.deepcopy(req.schema_) if req.schema_ else sess.schema
+    return _session_response({"ok": True, "warnings": warnings}, sid)
+
+
 @app.get("/api/node/{path:path}")
-def get_node(path: str) -> dict:
-    """Get details for a specific node by slash-separated path."""
+def get_node(path: str, bgloom_sid: str | None = Cookie(None)):
+    sess, sid = _get_session(bgloom_sid)
     parts = path.split("/") if path else []
-    value = _get_at_path(_state, parts)
-    return {"path": parts, "value": value}
+    value = _get_at_path(sess.state, parts)
+    return _session_response({"path": parts, "value": value}, sid)
 
 
 @app.put("/api/node/{path:path}/value")
-def put_node_value(path: str, req: UpdateValueRequest) -> dict:
-    """Update a node's value."""
+def put_node_value(path: str, req: UpdateValueRequest, bgloom_sid: str | None = Cookie(None)):
+    sess, sid = _get_session(bgloom_sid)
     parts = path.split("/")
-    _set_at_path(_state, parts, req.value)
-    return {"ok": True, "path": parts, "value": req.value}
+    _set_at_path(sess.state, parts, req.value)
+    return _session_response({"ok": True, "path": parts, "value": req.value}, sid)
 
 
 @app.put("/api/node/{path:path}/config")
-def put_node_config(path: str, req: UpdateValueRequest) -> dict:
-    """Update a process node's config."""
+def put_node_config(path: str, req: UpdateValueRequest, bgloom_sid: str | None = Cookie(None)):
+    sess, sid = _get_session(bgloom_sid)
     parts = path.split("/")
-    node = _get_at_path(_state, parts)
+    node = _get_at_path(sess.state, parts)
     if not isinstance(node, dict) or "_type" not in node:
-        raise HTTPException(400, "Not a process node")
+        # Also check structural process detection
+        if not is_process(node):
+            raise HTTPException(400, "Not a process node")
     node["config"] = req.value
-    return {"ok": True, "path": parts}
+    return _session_response({"ok": True, "path": parts}, sid)
 
 
 @app.post("/api/process")
-def post_process(req: AddProcessRequest) -> dict:
-    """Add a new process to the bigraph."""
+def post_process(req: AddProcessRequest, bgloom_sid: str | None = Cookie(None)):
+    sess, sid = _get_session(bgloom_sid)
     process_spec: dict[str, Any] = {
         "_type": req.process_type,
         "address": req.address,
@@ -357,25 +398,24 @@ def post_process(req: AddProcessRequest) -> dict:
         "inputs": {k: v for k, v in req.inputs.items()},
         "outputs": {k: v for k, v in req.outputs.items()},
     }
-    _set_at_path(_state, req.path, process_spec)
-    return {"ok": True, "path": req.path}
+    _set_at_path(sess.state, req.path, process_spec)
+    return _session_response({"ok": True, "path": req.path}, sid)
 
 
 @app.post("/api/store")
-def post_store(req: AddStoreRequest) -> dict:
-    """Add a new store node to the bigraph."""
-    _set_at_path(_state, req.path, req.value)
-    return {"ok": True, "path": req.path}
+def post_store(req: AddStoreRequest, bgloom_sid: str | None = Cookie(None)):
+    sess, sid = _get_session(bgloom_sid)
+    _set_at_path(sess.state, req.path, req.value)
+    return _session_response({"ok": True, "path": req.path}, sid)
 
 
 @app.post("/api/nest")
-def post_nest(req: NestRequest) -> dict:
-    """Move a node under a new parent (nesting)."""
-    value = _get_at_path(_state, req.source_path)
-    value = copy.deepcopy(value)
+def post_nest(req: NestRequest, bgloom_sid: str | None = Cookie(None)):
+    sess, sid = _get_session(bgloom_sid)
+    value = copy.deepcopy(_get_at_path(sess.state, req.source_path))
     node_name = req.source_path[-1]
 
-    parent = _get_at_path(_state, req.target_parent)
+    parent = _get_at_path(sess.state, req.target_parent)
     if not isinstance(parent, dict):
         raise HTTPException(400, "Target parent must be a group/dict node")
 
@@ -385,112 +425,80 @@ def post_nest(req: NestRequest) -> dict:
         raise HTTPException(400, "Cannot nest a node under itself or its descendants")
 
     new_path = req.target_parent + [node_name]
-    _set_at_path(_state, new_path, value)
-    _delete_at_path(_state, req.source_path)
-    return {"ok": True, "from": req.source_path, "to": new_path}
+    _set_at_path(sess.state, new_path, value)
+    _delete_at_path(sess.state, req.source_path)
+    return _session_response({"ok": True, "from": req.source_path, "to": new_path}, sid)
 
 
 @app.post("/api/rewire")
-def post_rewire(req: RewireRequest) -> dict:
-    """Rewire a process port to a new target store path."""
-    node = _get_at_path(_state, req.process_path)
-    if not isinstance(node, dict) or node.get("_type") not in ("process", "step", "edge"):
+def post_rewire(req: RewireRequest, bgloom_sid: str | None = Cookie(None)):
+    sess, sid = _get_session(bgloom_sid)
+    node = _get_at_path(sess.state, req.process_path)
+    if not is_process(node):
         raise HTTPException(400, "Not a process node")
     wires = node.get(req.direction, {})
     if req.port_name not in wires:
         raise HTTPException(404, f"Port '{req.port_name}' not found in {req.direction}")
     wires[req.port_name] = req.new_target
-    return {"ok": True, "process": req.process_path, "port": req.port_name, "target": req.new_target}
+    return _session_response(
+        {"ok": True, "process": req.process_path, "port": req.port_name, "target": req.new_target},
+        sid,
+    )
 
 
 @app.delete("/api/node/{path:path}")
-def delete_node(path: str) -> dict:
-    """Remove a node from the bigraph."""
+def delete_node(path: str, bgloom_sid: str | None = Cookie(None)):
+    sess, sid = _get_session(bgloom_sid)
     parts = path.split("/")
-    _delete_at_path(_state, parts)
-    return {"ok": True, "path": parts}
-
-
-# ── Core-powered endpoints ───────────────────────────────────────────────────
-
-@app.get("/api/registry")
-def get_registry() -> dict:
-    """List available process/step types from the Core's link registry."""
-    try:
-        core = _get_core()
-        process_list = []
-        for name in core.link_registry:
-            info = _process_info(name, core)
-            process_list.append(info)
-        return {"processes": process_list}
-    except Exception as e:
-        return {"processes": [], "error": str(e)}
-
-
-@app.get("/api/types")
-def get_types() -> dict:
-    """List available types from the Core's type registry."""
-    try:
-        core = _get_core()
-        type_list = []
-        for name in core.registry:
-            try:
-                rendered = core.render({name: name})
-                type_list.append({"name": name, "rendered": rendered})
-            except Exception:
-                type_list.append({"name": name, "rendered": name})
-        return {"types": type_list}
-    except Exception as e:
-        return {"types": [], "error": str(e)}
+    _delete_at_path(sess.state, parts)
+    return _session_response({"ok": True, "path": parts}, sid)
 
 
 @app.post("/api/check")
-def post_check(req: CheckRequest) -> dict:
-    """Run bigraph-schema check on the current state (or a sub-path)."""
+def post_check(req: CheckRequest, bgloom_sid: str | None = Cookie(None)):
+    sess, sid = _get_session(bgloom_sid)
     core = _get_core()
     try:
         if req.path:
-            schema_sub = _get_at_path(_schema, req.path) if _schema else {}
-            state_sub = _get_at_path(_state, req.path)
+            schema_sub = _get_at_path(sess.schema, req.path) if sess.schema else {}
+            state_sub = _get_at_path(sess.state, req.path)
         else:
-            schema_sub = _schema or {}
-            state_sub = _state
-
+            schema_sub = sess.schema or {}
+            state_sub = sess.state
         valid = core.check(schema_sub, state_sub)
-        return {"valid": valid, "path": req.path or []}
+        return _session_response({"valid": valid, "path": req.path or []}, sid)
     except Exception as e:
-        return {"valid": False, "error": str(e), "path": req.path or []}
+        return _session_response({"valid": False, "error": str(e), "path": req.path or []}, sid)
 
 
 @app.post("/api/fill")
-def post_fill() -> dict:
-    """Fill the current state with defaults from the schema."""
-    global _state
+def post_fill(bgloom_sid: str | None = Cookie(None)):
+    sess, sid = _get_session(bgloom_sid)
     core = _get_core()
     try:
-        schema = _schema or {}
-        filled = core.fill(schema, _state)
-        _state = filled
-        return {"ok": True}
+        schema = sess.schema or {}
+        sess.state = core.fill(schema, sess.state)
+        return _session_response({"ok": True}, sid)
     except Exception as e:
         raise HTTPException(400, f"Fill failed: {e}")
 
 
 @app.post("/api/infer")
-def post_infer() -> dict:
-    """Infer schema types from the current state."""
+def post_infer(bgloom_sid: str | None = Cookie(None)):
+    sess, sid = _get_session(bgloom_sid)
     core = _get_core()
     try:
-        inferred = core.infer(_state)
+        inferred = core.infer(sess.state)
         rendered = core.render(inferred)
-        return {"schema": rendered}
+        return _session_response({"schema": rendered}, sid)
     except Exception as e:
-        return {"schema": None, "error": str(e)}
+        return _session_response({"schema": None, "error": str(e)}, sid)
 
+
+# ── Shared (session-independent) endpoints ───────────────────────────────────
 
 @app.get("/api/core-info")
 def get_core_info() -> dict:
-    """Return info about the loaded Core instance."""
     core = _get_core()
     core_class = type(core)
     info: dict[str, Any] = {
@@ -506,9 +514,33 @@ def get_core_info() -> dict:
     return info
 
 
+@app.get("/api/registry")
+def get_registry() -> dict:
+    try:
+        core = _get_core()
+        return {"processes": [_process_info(name, core) for name in core.link_registry]}
+    except Exception as e:
+        return {"processes": [], "error": str(e)}
+
+
+@app.get("/api/types")
+def get_types() -> dict:
+    try:
+        core = _get_core()
+        type_list = []
+        for name in core.registry:
+            try:
+                rendered = core.render({name: name})
+                type_list.append({"name": name, "rendered": rendered})
+            except Exception:
+                type_list.append({"name": name, "rendered": name})
+        return {"types": type_list}
+    except Exception as e:
+        return {"types": [], "error": str(e)}
+
+
 @app.get("/api/process-source/{address:path}")
 def get_process_source(address: str) -> dict:
-    """Return rich info about a process by its address (e.g. 'local:MyProcess')."""
     core = _get_core()
     name = address.split(":", 1)[-1] if ":" in address else address
     return _process_info(name, core)
