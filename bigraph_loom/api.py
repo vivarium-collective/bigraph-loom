@@ -97,7 +97,8 @@ async def _startup():
                     data = _json.loads(pbg_file.read_text())
                     state = data.get("state", data)
                     schema = data.get("schema", None)
-                    sessions.add_example(pbg_file.stem, state, schema)
+                    view_state = data.get("view_state", None)
+                    sessions.add_example(pbg_file.stem, state, schema, view_state)
                 except Exception:
                     pass
 
