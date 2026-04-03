@@ -13,7 +13,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 from pydantic import BaseModel
 
-from bigraph_loom.convert import bigraph_to_flow, ViewMode
+from bigraph_loom.convert import bigraph_to_flow, ViewMode, normalize_address, is_process
 
 app = FastAPI(title="Bigraph Loom", version="0.1.0")
 
@@ -270,13 +270,13 @@ def _check_unregistered_processes(state: dict, path: tuple = ()) -> list[dict]:
         if key.startswith("_"):
             continue
         node_path = path + (key,)
-        if isinstance(value, dict) and value.get("_type") in ("process", "step", "edge", "composite"):
-            address = value.get("address", "")
-            name = address.split(":", 1)[-1] if ":" in address else address
+        if is_process(value):
+            address_str = normalize_address(value.get("address", ""))
+            name = address_str.split(":", 1)[-1] if ":" in address_str else address_str
             if name and name not in core.link_registry:
                 warnings.append({
                     "path": list(node_path),
-                    "address": address,
+                    "address": address_str,
                     "message": f"Process '{name}' is not registered in the current Core",
                 })
         elif isinstance(value, dict):

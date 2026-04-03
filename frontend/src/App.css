@@ -81,18 +81,26 @@ body {
 .process-node {
   background: #ffffff;
   border: 2px solid #6366f1;
-  border-radius: 6px;
-  padding: 8px 16px;
+  border-radius: 0;
+  padding: 10px 40px;
   min-width: 100px;
+  min-height: 50px;
   text-align: center;
   font-size: 12px;
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.1);
   cursor: pointer;
+  position: relative;
 }
 
 .process-node:hover {
   border-color: #4f46e5;
   box-shadow: 0 2px 8px rgba(99, 102, 241, 0.3);
+}
+
+.process-body {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
 }
 
 .process-label {
@@ -104,6 +112,85 @@ body {
   color: #94a3b8;
   font-size: 10px;
   font-style: italic;
+}
+
+/* ── Port handles ────────────────────────────────────────────────────── */
+
+.port-handle {
+  width: 8px !important;
+  height: 8px !important;
+  border: 2px solid #6366f1 !important;
+  background: #ffffff !important;
+  transition: transform 0.15s, background 0.15s;
+}
+
+.port-handle-input {
+  border-color: #10b981 !important;
+}
+
+.port-handle:hover {
+  transform: scale(1.5);
+}
+
+.port-handle-input:hover {
+  background: #10b981 !important;
+}
+
+.port-handle-output:hover {
+  background: #6366f1 !important;
+}
+
+/* ── Port labels (name + hover tooltip) ──────────────────────────────── */
+
+.port-label {
+  position: absolute;
+  transform: translateY(-50%);
+  pointer-events: auto;
+  white-space: nowrap;
+}
+
+.port-label-left {
+  right: calc(100% + 12px);
+  text-align: right;
+}
+
+.port-label-right {
+  left: calc(100% + 12px);
+  text-align: left;
+}
+
+.port-label-name {
+  font-size: 9px;
+  color: #475569;
+  font-weight: 500;
+}
+
+.port-label-tooltip {
+  display: none;
+  position: absolute;
+  background: #1e293b;
+  color: #e2e8f0;
+  font-size: 10px;
+  font-family: "SF Mono", Menlo, Monaco, monospace;
+  padding: 4px 8px;
+  border-radius: 4px;
+  white-space: nowrap;
+  z-index: 100;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+.port-label-left .port-label-tooltip {
+  right: calc(100% + 6px);
+}
+
+.port-label-right .port-label-tooltip {
+  left: calc(100% + 6px);
+}
+
+.port-label:hover .port-label-tooltip {
+  display: block;
 }
 
 /* ── Group (compound) nodes ──────────────────────────────────────────── */
@@ -118,11 +205,33 @@ body {
   color: #64748b;
 }
 
-/* React Flow group node overrides */
+/* React Flow group node overrides — container for nested children */
 .react-flow__node-group {
-  background: rgba(241, 245, 249, 0.8) !important;
-  border: 2px dashed #94a3b8 !important;
-  border-radius: 12px !important;
+  background: rgba(241, 245, 249, 0.5) !important;
+  border: 2px solid #10b981 !important;
+  border-radius: 50% !important;
+  padding: 0 !important;
+}
+
+/* ── Group resize handles ────────────────────────────────────────────── */
+
+.group-handle {
+  width: 8px !important;
+  height: 8px !important;
+  background: #10b981 !important;
+  border: 2px solid #ffffff !important;
+}
+
+.group-resize-line {
+  border-color: #10b981 !important;
+}
+
+.group-resize-handle {
+  width: 8px !important;
+  height: 8px !important;
+  background: #10b981 !important;
+  border: none !important;
+  border-radius: 2px !important;
 }
 
 /* ── Inspector panel ─────────────────────────────────────────────────── */
@@ -604,11 +713,17 @@ body {
   cursor: pointer;
 }
 
-/* ── Store node group variant (hierarchical mode) ────────────────────── */
+/* ── Store node group variant (hierarchical mode only) ────────────────── */
 
 .store-node-group {
-  border-color: #94a3b8;
-  border-style: dashed;
+  border-color: #10b981;
+}
+
+/* ── Group node collapsed (nested mode) ──────────────────────────────── */
+
+.react-flow__node-group.selected {
+  border-color: #059669 !important;
+  box-shadow: 0 2px 8px rgba(16, 185, 129, 0.3) !important;
 }
 
 .store-node-collapsed {
