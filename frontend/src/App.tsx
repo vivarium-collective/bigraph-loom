@@ -1,11 +1,12 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ReactFlow,
+  ReactFlowProvider,
   Background,
   Controls,
-  MiniMap,
   useNodesState,
   useEdgesState,
+  useReactFlow,
   type Node,
   type Edge,
   type OnSelectionChangeParams,
@@ -14,207 +15,360 @@ import "@xyflow/react/dist/style.css";
 
 import StoreNode from "./nodes/StoreNode";
 import ProcessNode from "./nodes/ProcessNode";
-import GroupNode from "./nodes/GroupNode";
 import InspectorPanel from "./panels/InspectorPanel";
-import AddPanel from "./panels/AddPanel";
-import JsonPanel from "./panels/JsonPanel";
+import LibraryPanel from "./panels/LibraryPanel";
+import ProcessListPanel from "./panels/ProcessListPanel";
 import {
   fetchGraph,
   exportPbg,
   importPbgFile,
-  runCheck,
-  nestNode,
-  fetchCoreInfo,
-  type ViewMode,
+  type ViewState,
   type ImportWarning,
+  type GraphResponse,
 } from "./api";
-import { applyLayout } from "./layout";
+import { applyLayout, applyCompactLayout } from "./layout";
 import "./App.css";
 
-const nodeTypes = {
-  store: StoreNode,
-  process: ProcessNode,
-  group: GroupNode,
-};
+const JsonPanel = lazy(() => import("./panels/JsonPanel"));
 
-type SidePanel = "inspect" | "add" | "json";
+const nodeTypes = { store: StoreNode, process: ProcessNode };
 
-export default function App() {
+type SidePanel = "inspect" | "json" | "library" | "processes";
+
+function AppInner() {
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
   const [selectedNode, setSelectedNode] = useState<Node | null>(null);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [hiddenNodes, setHiddenNodes] = useState<Set<string>>(new Set());
   const [sidePanel, setSidePanel] = useState<SidePanel>("inspect");
-  const [viewMode, setViewMode] = useState<ViewMode>("nested");
-  const [checkResult, setCheckResult] = useState<{
-    valid: boolean;
-    error?: string;
-  } | null>(null);
-  const [coreInfo, setCoreInfo] = useState<{
-    class: string;
-    module: string;
-    source_file: string | null;
-    num_types: number;
-    num_processes: number;
-  } | null>(null);
   const [importWarnings, setImportWarnings] = useState<ImportWarning[]>([]);
 
-  // Load Core info once
-  useEffect(() => {
-    fetchCoreInfo().then(setCoreInfo).catch(() => {});
+  const cachedGraph = useRef<GraphResponse | null>(null);
+  const cachedLayout = useRef<{ nodes: Node[]; edges: Edge[] } | null>(null);
+  const pendingViewState = useRef<ViewState | null>(null);
+  const selectedNodeRef = useRef<Node | null>(null);
+  const collapsedRef = useRef(collapsed);
+  collapsedRef.current = collapsed;
+  const hiddenRef = useRef(hiddenNodes);
+  hiddenRef.current = hiddenNodes;
+
+  const reactFlow = useReactFlow();
+
+  // ── Build parent→children map from place edges (stable across filters) ──
+  const placeChildrenRef = useRef(new Map<string, string[]>());
+
+  // ── Fetch graph data ──────────────────────────────────────────────────
+  const fetchData = useCallback(async () => {
+    const data = await fetchGraph();
+    cachedGraph.current = data;
+    cachedLayout.current = null;
+
+    // Build place-children map once
+    const map = new Map<string, string[]>();
+    for (const e of data.edges) {
+      if (e.data?.edgeType === "place") {
+        const list = map.get(e.source) ?? [];
+        list.push(e.target);
+        map.set(e.source, list);
+      }
+    }
+    placeChildrenRef.current = map;
+
+    return data;
   }, []);
 
-  const loadGraph = useCallback(async () => {
-    try {
-      const data = await fetchGraph(viewMode);
+  // ── Compute layout ────────────────────────────────────────────────────
+  const computeLayout = useCallback(
+    (data: GraphResponse): { nodes: Node[]; edges: Edge[] } => {
+      if (cachedLayout.current && cachedLayout.current.nodes.length > 0) {
+        return cachedLayout.current;
+      }
 
-      // Filter out hidden nodes
-      let visibleNodes = data.nodes.filter((n) => !hiddenNodes.has(n.id));
+      const allNodes = data.nodes as unknown as Node[];
+      const allEdges = data.edges as unknown as Edge[];
+      let laid = applyLayout(allNodes, allEdges);
 
-      // Filter out children of collapsed groups (only in nested mode)
-      if (viewMode === "nested") {
-        visibleNodes = visibleNodes.filter((n) => {
-          if (!n.parentId) return true;
-          let pid: string | undefined = n.parentId;
-          while (pid) {
-            if (collapsed.has(pid)) return false;
-            const parent = data.nodes.find((p) => p.id === pid);
-            pid = parent?.parentId;
-          }
-          return true;
+      const vs = pendingViewState.current;
+      if (vs?.positions && Object.keys(vs.positions).length > 0) {
+        laid = laid.map((n) => {
+          const copy = { ...n };
+          const savedPos = vs.positions[n.id];
+          if (savedPos) copy.position = { x: savedPos.x, y: savedPos.y };
+          const savedStyle = vs.styles?.[n.id];
+          if (savedStyle) copy.style = { ...copy.style, ...savedStyle };
+          return copy;
         });
-      } else {
-        // In hierarchical mode, collapse hides all descendants (via place edges)
-        if (collapsed.size > 0) {
-          const descendantsOf = new Set<string>();
-          // Build parent->children map from place edges
-          const placeChildren = new Map<string, string[]>();
-          for (const e of data.edges) {
-            if (e.data?.edgeType === "place") {
-              const list = placeChildren.get(e.source) ?? [];
-              list.push(e.target);
-              placeChildren.set(e.source, list);
-            }
-          }
-          // BFS from each collapsed node to find all descendants
-          for (const cid of collapsed) {
-            const queue = placeChildren.get(cid) ?? [];
-            while (queue.length) {
-              const child = queue.shift()!;
-              descendantsOf.add(child);
-              for (const gc of placeChildren.get(child) ?? []) {
-                queue.push(gc);
-              }
-            }
-          }
-          visibleNodes = visibleNodes.filter((n) => !descendantsOf.has(n.id));
+        if (vs.zoom != null || vs.panX != null) {
+          setTimeout(() => {
+            reactFlow.setViewport({ x: vs.panX ?? 0, y: vs.panY ?? 0, zoom: vs.zoom ?? 1 });
+          }, 50);
+        }
+        pendingViewState.current = null;
+      }
+
+      cachedLayout.current = { nodes: laid, edges: allEdges };
+      return cachedLayout.current;
+    },
+    [reactFlow]
+  );
+
+  // ── Get all descendants of a set of node IDs ──────────────────────────
+  const getDescendants = useCallback((ids: Iterable<string>): Set<string> => {
+    const desc = new Set<string>();
+    const queue = [...ids];
+    while (queue.length) {
+      const id = queue.shift()!;
+      for (const child of placeChildrenRef.current.get(id) ?? []) {
+        if (!desc.has(child)) {
+          desc.add(child);
+          queue.push(child);
+        }
+      }
+    }
+    return desc;
+  }, []);
+
+  // ── Apply visibility filter (no re-fetch, no re-layout) ──────────────
+  const applyFilter = useCallback(
+    (allNodes: Node[], allEdges: Edge[]) => {
+      const currentCollapsed = collapsedRef.current;
+      const currentHidden = hiddenRef.current;
+
+      // Expand hidden set to include all descendants of hidden nodes
+      const hiddenWithDescendants = new Set(currentHidden);
+      for (const id of currentHidden) {
+        for (const desc of getDescendants([id])) {
+          hiddenWithDescendants.add(desc);
         }
       }
 
+      // Expand collapsed set to hide all descendants
+      const collapsedDescendants = getDescendants(currentCollapsed);
+
+      let visibleNodes = allNodes.filter(
+        (n) => !hiddenWithDescendants.has(n.id) && !collapsedDescendants.has(n.id)
+      );
+
       const visibleIds = new Set(visibleNodes.map((n) => n.id));
-      const visibleEdges = data.edges.filter(
+      let visibleEdges = allEdges.filter(
         (e) => visibleIds.has(e.source) && visibleIds.has(e.target)
       );
 
-      // Mark collapsed group nodes so the UI can show the indicator
-      const markedNodes = visibleNodes.map((n) => {
-        if (collapsed.has(n.id)) {
-          return {
-            ...n,
-            data: { ...n.data, isCollapsed: true },
-          };
-        }
-        return n;
-      });
+      // For large graphs, always show place edges but limit wire edges
+      const placeEdges = visibleEdges.filter((e) => (e.data as any)?.edgeType === "place");
+      const wireEdges = visibleEdges.filter((e) => (e.data as any)?.edgeType !== "place");
+      const WIRE_LIMIT = 200;
+      if (wireEdges.length > WIRE_LIMIT) {
+        const sel = selectedNodeRef.current;
+        const filteredWires = sel
+          ? wireEdges.filter((e) => e.source === sel.id || e.target === sel.id)
+          : [];
+        visibleEdges = [...placeEdges, ...filteredWires];
+      }
 
-      const laid = applyLayout(
-        markedNodes as unknown as Node[],
-        visibleEdges as unknown as Edge[],
-        viewMode
+      const marked = visibleNodes.map((n) =>
+        currentCollapsed.has(n.id)
+          ? { ...n, data: { ...n.data, isCollapsed: true } }
+          : n
       );
-      setNodes(laid);
-      setEdges(visibleEdges as unknown as Edge[]);
+
+      setNodes(marked);
+      setEdges(visibleEdges);
+    },
+    [setNodes, setEdges, getDescendants]
+  );
+
+  // ── Full reload ───────────────────────────────────────────────────────
+  const loadGraph = useCallback(async () => {
+    try {
+      const data = await fetchData();
+      const { nodes: laid, edges: allEdges } = computeLayout(data);
+      applyFilter(laid, allEdges);
     } catch (err) {
       console.error("Failed to load graph:", err);
     }
-  }, [collapsed, hiddenNodes, viewMode, setNodes, setEdges]);
+  }, [fetchData, computeLayout, applyFilter]);
 
+  useEffect(() => { loadGraph(); }, [loadGraph]);
+
+  // Re-filter when collapsed/hidden change
   useEffect(() => {
-    loadGraph();
-  }, [loadGraph]);
+    if (!cachedLayout.current) return;
+    applyFilter(cachedLayout.current.nodes, cachedLayout.current.edges);
+  }, [collapsed, hiddenNodes, applyFilter]);
 
-  const storePaths = useMemo(() => {
-    return nodes
-      .filter(
-        (n) =>
-          n.type === "group" ||
-          (n.data && (n.data as any).nodeType === "store" && (n.data as any).isGroup)
-      )
-      .map((n) => (n.data as any).path as string[]);
+  // ── Sync positions to cache ───────────────────────────────────────────
+  const syncPositionsToCache = useCallback(() => {
+    if (!cachedLayout.current) return;
+    const currentNodes = reactFlow.getNodes();
+    const posMap = new Map(currentNodes.map((n) => [n.id, n.position]));
+    cachedLayout.current.nodes = cachedLayout.current.nodes.map((n) => {
+      const pos = posMap.get(n.id);
+      return pos ? { ...n, position: pos } : n;
+    });
+  }, [reactFlow]);
+
+  // ── View state ────────────────────────────────────────────────────────
+  const getViewState = useCallback((): ViewState => {
+    const positions: Record<string, { x: number; y: number }> = {};
+    const styles: Record<string, Record<string, unknown>> = {};
+    for (const n of nodes) {
+      positions[n.id] = { x: n.position.x, y: n.position.y };
+      if (n.style && (n.style.width || n.style.height)) {
+        styles[n.id] = { width: n.style.width, height: n.style.height };
+      }
+    }
+    const vp = reactFlow.getViewport();
+    return {
+      positions, styles,
+      collapsed: Array.from(collapsed),
+      hidden: Array.from(hiddenNodes),
+      viewMode: "hierarchical",
+      zoom: vp.zoom, panX: vp.x, panY: vp.y,
+    };
+  }, [nodes, collapsed, hiddenNodes, reactFlow]);
+
+  const restoreViewState = useCallback((vs: ViewState) => {
+    setCollapsed(new Set(vs.collapsed ?? []));
+    setHiddenNodes(new Set(vs.hidden ?? []));
+    pendingViewState.current = vs;
+    cachedLayout.current = null;
+  }, []);
+
+  // ── Collapse/expand/compact ───────────────────────────────────────────
+  const allGroupIds = useMemo(() => {
+    if (!cachedLayout.current) return new Set<string>();
+    return new Set(
+      cachedLayout.current.nodes
+        .filter((n) => (n.data as any)?.isGroup)
+        .map((n) => n.id)
+    );
   }, [nodes]);
 
+  const allProcessNodes = useMemo(() => {
+    if (!cachedLayout.current) return [] as Node[];
+    return cachedLayout.current.nodes.filter((n) => n.type === "process");
+  }, [nodes]);
+
+  const handleCollapseAll = useCallback(() => {
+    setCollapsed(new Set(allGroupIds));
+  }, [allGroupIds]);
+
+  const handleExpandAll = useCallback(() => {
+    setCollapsed(new Set());
+    setHiddenNodes(new Set());
+    // Re-layout so newly revealed nodes get proper positions
+    if (cachedGraph.current) {
+      cachedLayout.current = null; // force re-layout
+      const data = cachedGraph.current;
+      const allNodes = data.nodes as unknown as Node[];
+      const allEdges = data.edges as unknown as Edge[];
+      const laid = applyLayout(allNodes, allEdges);
+      cachedLayout.current = { nodes: laid, edges: allEdges };
+    }
+  }, []);
+
+  const handleCompact = useCallback(() => {
+    setNodes((current) => applyCompactLayout(current));
+    setTimeout(() => {
+      syncPositionsToCache();
+      reactFlow.fitView({ padding: 0.1 });
+    }, 50);
+  }, [setNodes, reactFlow, syncPositionsToCache]);
+
+  const handleHierarchical = useCallback(() => {
+    // Re-run dagre tree layout using place edges (outers above inners)
+    if (!cachedLayout.current) return;
+    const allEdges = cachedLayout.current.edges;
+    setNodes((current) => applyLayout(current, allEdges));
+    setTimeout(() => {
+      syncPositionsToCache();
+      reactFlow.fitView({ padding: 0.1 });
+    }, 50);
+  }, [setNodes, reactFlow, syncPositionsToCache]);
+
+  // ── Selection ─────────────────────────────────────────────────────────
   const onSelectionChange = useCallback(
     ({ nodes: sel }: OnSelectionChangeParams) => {
-      if (sel.length === 1) {
-        setSelectedNode(sel[0]);
-        setSidePanel("inspect");
-      } else {
-        setSelectedNode(null);
+      const selected = sel.length === 1 ? sel[0] : null;
+      setSelectedNode(selected);
+      selectedNodeRef.current = selected;
+      if (selected) setSidePanel("inspect");
+
+      // Update edges only (for large-graph edge filtering)
+      if (cachedLayout.current) {
+        const currentHidden = hiddenRef.current;
+        const visibleNodeIds = new Set(reactFlow.getNodes().map((n) => n.id));
+        let visibleEdges = cachedLayout.current.edges.filter(
+          (e) => visibleNodeIds.has(e.source) && visibleNodeIds.has(e.target)
+            && !currentHidden.has(e.source) && !currentHidden.has(e.target)
+        );
+        const placeEdges = visibleEdges.filter((e) => (e.data as any)?.edgeType === "place");
+        const wireEdges = visibleEdges.filter((e) => (e.data as any)?.edgeType !== "place");
+        const WIRE_LIMIT = 200;
+        if (wireEdges.length > WIRE_LIMIT) {
+          const filteredWires = selected
+            ? wireEdges.filter((e) => e.source === selected.id || e.target === selected.id)
+            : [];
+          setEdges([...placeEdges, ...filteredWires]);
+        } else {
+          setEdges(visibleEdges);
+        }
       }
     },
-    []
+    [reactFlow, setEdges]
   );
 
   const onNodeDoubleClick = useCallback(
     (_event: React.MouseEvent, node: Node) => {
-      // Toggle collapse on group nodes (nested) or store-with-children (hierarchical)
       const data = node.data as any;
-      if (node.type === "group" || data?.isGroup) {
+      if (data?.isGroup) {
         setCollapsed((prev) => {
           const next = new Set(prev);
           if (next.has(node.id)) next.delete(node.id);
           else next.add(node.id);
           return next;
         });
+      } else {
+        setHiddenNodes((prev) => new Set(prev).add(node.id));
       }
     },
     []
   );
 
-  const handleCheck = useCallback(async () => {
-    const result = await runCheck();
-    setCheckResult(result);
-    setTimeout(() => setCheckResult(null), 5000);
+  const onNodeDragStop = useCallback(() => {
+    syncPositionsToCache();
+  }, [syncPositionsToCache]);
+
+  // ── Process toggle ────────────────────────────────────────────────────
+  const handleToggleProcess = useCallback((nodeId: string) => {
+    setHiddenNodes((prev) => {
+      const next = new Set(prev);
+      if (next.has(nodeId)) next.delete(nodeId);
+      else next.add(nodeId);
+      return next;
+    });
   }, []);
 
-  const handleNest = useCallback(
-    async (sourceId: string, targetId: string) => {
-      const sourceNode = nodes.find((n) => n.id === sourceId);
-      const targetNode = nodes.find((n) => n.id === targetId);
-      if (!sourceNode || !targetNode) return;
-      const sourcePath = (sourceNode.data as any).path as string[];
-      const targetPath = (targetNode.data as any).path as string[];
-      try {
-        await nestNode(sourcePath, targetPath);
-        loadGraph();
-      } catch (err: any) {
-        console.error("Nest failed:", err.message);
-      }
-    },
-    [nodes, loadGraph]
-  );
+  const handleHideAllProcesses = useCallback(() => {
+    setHiddenNodes((prev) => {
+      const next = new Set(prev);
+      for (const n of allProcessNodes) next.add(n.id);
+      return next;
+    });
+  }, [allProcessNodes]);
 
-  const handleHideNode = useCallback(
-    (nodeId: string) => {
-      setHiddenNodes((prev) => new Set(prev).add(nodeId));
-    },
-    []
-  );
+  const handleShowAllProcesses = useCallback(() => {
+    setHiddenNodes((prev) => {
+      const next = new Set(prev);
+      for (const n of allProcessNodes) next.delete(n.id);
+      return next;
+    });
+  }, [allProcessNodes]);
 
-  const handleShowAll = useCallback(() => {
-    setHiddenNodes(new Set());
-    setCollapsed(new Set());
+  const handleHideNode = useCallback((nodeId: string) => {
+    setHiddenNodes((prev) => new Set(prev).add(nodeId));
   }, []);
 
   const handleImport = useCallback(() => {
@@ -227,9 +381,9 @@ export default function App() {
       try {
         const result = await importPbgFile(file);
         setImportWarnings(result.warnings ?? []);
-        if (result.warnings?.length) {
-          setTimeout(() => setImportWarnings([]), 15000);
-        }
+        if (result.warnings?.length) setTimeout(() => setImportWarnings([]), 15000);
+        setCollapsed(new Set());
+        setHiddenNodes(new Set());
         loadGraph();
       } catch (err: any) {
         console.error("Import failed:", err.message);
@@ -238,77 +392,42 @@ export default function App() {
     input.click();
   }, [loadGraph]);
 
+  const groupNodes = useMemo(() =>
+    nodes.filter((n) => (n.data as any)?.isGroup), [nodes]);
+  const allStoreNodes = useMemo(() =>
+    nodes.filter((n) => n.type !== "process"), [nodes]);
+
   return (
     <div className="app-container">
       <header className="app-header">
         <h1>Bigraph Loom</h1>
         <div className="header-actions">
-          {/* View toggle */}
           <div className="view-toggle">
-            <button
-              className={viewMode === "nested" ? "toggle-active" : ""}
-              onClick={() => setViewMode("nested")}
-              title="Nested view: stores inside stores"
-            >
-              Nested
-            </button>
-            <button
-              className={viewMode === "hierarchical" ? "toggle-active" : ""}
-              onClick={() => setViewMode("hierarchical")}
-              title="Hierarchical view: place graph with processes to the side"
-            >
-              Hierarchy
-            </button>
+            <button onClick={handleCompact} title="Gather nodes into a tight grid">Compact</button>
+            <button onClick={handleHierarchical} title="Tree layout: outers above inners">Hierarchy</button>
+            <button onClick={handleExpandAll} title="Show all hidden/collapsed nodes">Expand</button>
+            <button onClick={handleCollapseAll} title="Collapse all groups">Collapse</button>
           </div>
-
-          <button className="header-btn" onClick={handleImport} title="Import .pbg file">
-            Import .pbg
-          </button>
-          <button className="header-btn" onClick={handleCheck} title="Run schema check">
-            Check
-          </button>
-          <button className="header-btn" onClick={exportPbg} title="Export .pbg file">
-            Export .pbg
-          </button>
-          {(hiddenNodes.size > 0 || collapsed.size > 0) && (
-            <button className="header-btn" onClick={handleShowAll} title="Show all hidden/collapsed nodes">
-              Show All
-            </button>
-          )}
-          <button
-            className={`header-btn ${sidePanel === "add" ? "header-btn-active" : ""}`}
-            onClick={() => setSidePanel(sidePanel === "add" ? "inspect" : "add")}
-          >
-            + Add
-          </button>
-          <button
-            className={`header-btn ${sidePanel === "json" ? "header-btn-active" : ""}`}
-            onClick={() => setSidePanel(sidePanel === "json" ? "inspect" : "json")}
-          >
-            JSON
-          </button>
-          {checkResult && (
-            <span className={`check-badge ${checkResult.valid ? "check-ok" : "check-fail"}`}>
-              {checkResult.valid ? "Valid" : checkResult.error || "Invalid"}
-            </span>
-          )}
+          <span className="header-sep" />
+          <button className="header-btn" onClick={handleImport}>Import</button>
+          <button className="header-btn" onClick={exportPbg}>Export</button>
+          <span className="header-sep" />
+          <div className="panel-tabs">
+            <button
+              className={sidePanel === "library" ? "panel-tab-active" : ""}
+              onClick={() => setSidePanel(sidePanel === "library" ? "inspect" : "library")}
+            >Library</button>
+            <button
+              className={sidePanel === "processes" ? "panel-tab-active" : ""}
+              onClick={() => setSidePanel(sidePanel === "processes" ? "inspect" : "processes")}
+            >Processes</button>
+            <button
+              className={sidePanel === "json" ? "panel-tab-active" : ""}
+              onClick={() => setSidePanel(sidePanel === "json" ? "inspect" : "json")}
+            >JSON</button>
+          </div>
         </div>
       </header>
-      {/* Core info bar */}
-      {coreInfo && (
-        <div className="core-info-bar">
-          <span className="core-label">Core:</span>
-          <span className="core-class">{coreInfo.class}</span>
-          {coreInfo.source_file && (
-            <span className="core-file" title={coreInfo.source_file}>
-              {coreInfo.source_file}
-            </span>
-          )}
-          <span className="core-stats">
-            {coreInfo.num_types} types, {coreInfo.num_processes} processes
-          </span>
-        </div>
-      )}
       {importWarnings.length > 0 && (
         <div className="warnings-bar">
           <strong>Unregistered processes:</strong>
@@ -330,43 +449,58 @@ export default function App() {
             onEdgesChange={onEdgesChange}
             onSelectionChange={onSelectionChange}
             onNodeDoubleClick={onNodeDoubleClick}
+            onNodeDragStop={onNodeDragStop}
             fitView
             minZoom={0.1}
             maxZoom={4}
-            defaultEdgeOptions={{
-              type: "smoothstep",
-              animated: true,
-            }}
+            defaultEdgeOptions={{ type: "straight", animated: false }}
           >
             <Background gap={20} size={1} />
             <Controls />
-            <MiniMap
-              nodeStrokeWidth={3}
-              nodeColor={(n: Node) =>
-                n.type === "process"
-                  ? "#6366f1"
-                  : n.type === "group"
-                    ? "#e5e7eb"
-                    : "#10b981"
-              }
-            />
           </ReactFlow>
         </div>
-        {sidePanel === "inspect" ? (
-          <InspectorPanel
-            node={selectedNode}
-            onUpdate={loadGraph}
-            onNest={handleNest}
-            onHide={handleHideNode}
-            groupNodes={nodes.filter((n) => n.type === "group" || (n.data as any)?.isGroup)}
-            allStoreNodes={nodes.filter((n) => n.type !== "process")}
-          />
-        ) : sidePanel === "add" ? (
-          <AddPanel storePaths={storePaths} onUpdate={loadGraph} />
-        ) : (
-          <JsonPanel onUpdate={loadGraph} />
-        )}
+        <div className="sidebar">
+          {sidePanel === "inspect" ? (
+            <InspectorPanel
+              node={selectedNode}
+              onUpdate={loadGraph}
+              onHide={handleHideNode}
+              groupNodes={groupNodes}
+              allStoreNodes={allStoreNodes}
+            />
+          ) : sidePanel === "json" ? (
+            <Suspense fallback={<div style={{padding:16,color:"#94a3b8"}}>Loading editor...</div>}>
+              <JsonPanel onUpdate={loadGraph} />
+            </Suspense>
+          ) : sidePanel === "processes" ? (
+            <ProcessListPanel
+              allProcessNodes={allProcessNodes}
+              hiddenNodes={hiddenNodes}
+              onToggle={handleToggleProcess}
+              onHideAll={handleHideAllProcesses}
+              onShowAll={handleShowAllProcesses}
+            />
+          ) : (
+            <LibraryPanel
+              onUpdate={loadGraph}
+              onWarnings={(w) => {
+                setImportWarnings(w);
+                if (w.length) setTimeout(() => setImportWarnings([]), 15000);
+              }}
+              getViewState={getViewState}
+              restoreViewState={restoreViewState}
+            />
+          )}
+        </div>
       </div>
     </div>
+  );
+}
+
+export default function App() {
+  return (
+    <ReactFlowProvider>
+      <AppInner />
+    </ReactFlowProvider>
   );
 }

@@ -8,12 +8,12 @@ import json
 import textwrap
 from typing import Any, Literal
 
-from fastapi import Cookie, FastAPI, File, HTTPException, Query, UploadFile
+from fastapi import Cookie, FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel
 
-from bigraph_loom.convert import bigraph_to_flow, ViewMode, normalize_address, is_process
+from bigraph_loom.convert import bigraph_to_flow, normalize_address, is_process
 from bigraph_loom.session import Session, sessions
 
 app = FastAPI(title="Bigraph Loom", version="0.1.0")
@@ -84,8 +84,27 @@ def _session_response(data: dict, sid: str) -> JSONResponse:
 @app.on_event("startup")
 async def _startup():
     import asyncio
+    import json as _json
     from pathlib import Path
     from fastapi.staticfiles import StaticFiles
+
+    # Load bundled .pbg examples if not already loaded (e.g. Docker direct uvicorn)
+    if not sessions.examples:
+        docs_dir = Path(__file__).parent.parent / "docs"
+        if docs_dir.is_dir():
+            for pbg_file in sorted(docs_dir.glob("*.pbg")):
+                try:
+                    data = _json.loads(pbg_file.read_text())
+                    state = data.get("state", data)
+                    schema = data.get("schema", None)
+                    sessions.add_example(pbg_file.stem, state, schema)
+                except Exception:
+                    pass
+
+    # If no default state set yet, use ecoli_state example
+    if not sessions._default_state and "ecoli_wcm" in sessions.examples:
+        ex = sessions.examples["ecoli_wcm"]
+        sessions.set_defaults(ex.state, ex.schema)
 
     # Mount built frontend if it exists (for Docker / production)
     frontend_dir = Path(__file__).parent.parent / "frontend" / "dist"
@@ -272,12 +291,9 @@ def _check_unregistered_processes(state: dict, path: tuple = ()) -> list[dict]:
 # ── Session-scoped routes ────────────────────────────────────────────────────
 
 @app.get("/api/graph")
-def get_graph(
-    view: ViewMode = Query("nested"),
-    bgloom_sid: str | None = Cookie(None),
-):
+def get_graph(bgloom_sid: str | None = Cookie(None)):
     sess, sid = _get_session(bgloom_sid)
-    data = bigraph_to_flow(sess.state, schema=sess.schema, view=view)
+    data = bigraph_to_flow(sess.state, schema=sess.schema)
     return _session_response(data, sid)
 
 
@@ -544,3 +560,73 @@ def get_process_source(address: str) -> dict:
     core = _get_core()
     name = address.split(":", 1)[-1] if ":" in address else address
     return _process_info(name, core)
+
+
+# ── Library endpoints (examples + per-session saved bigraphs) ────────────────
+
+@app.get("/api/library")
+def get_library(bgloom_sid: str | None = Cookie(None)):
+    """List available bigraphs: built-in examples + user's saved bigraphs."""
+    sess, sid = _get_session(bgloom_sid)
+    examples = [
+        {"name": name, "source": "example", "has_view": sessions.examples[name].view_state is not None}
+        for name in sessions.examples
+    ]
+    saved = [
+        {"name": name, "source": "saved", "saved_at": bg.saved_at, "has_view": bg.view_state is not None}
+        for name, bg in sess.library.items()
+    ]
+    return _session_response({"files": examples + saved}, sid)
+
+
+@app.post("/api/library/load/{name}")
+def load_from_library(name: str, bgloom_sid: str | None = Cookie(None)):
+    """Load a bigraph from the library (example or saved) into the session."""
+    sess, sid = _get_session(bgloom_sid)
+
+    if name in sessions.examples:
+        bg = sessions.examples[name]
+    elif name in sess.library:
+        bg = sess.library[name]
+    else:
+        raise HTTPException(404, f"Bigraph '{name}' not found in library")
+
+    sess.state = copy.deepcopy(bg.state)
+    sess.schema = copy.deepcopy(bg.schema) if bg.schema else None
+    warnings = _check_unregistered_processes(sess.state)
+    return _session_response({
+        "ok": True,
+        "name": name,
+        "warnings": warnings,
+        "view_state": bg.view_state,
+    }, sid)
+
+
+class SaveRequest(BaseModel):
+    name: str
+    view_state: dict[str, Any] | None = None
+
+
+@app.post("/api/library/save")
+def save_to_library(req: SaveRequest, bgloom_sid: str | None = Cookie(None)):
+    """Save the current bigraph state and view state to the session's library."""
+    from bigraph_loom.session import SavedBigraph
+
+    sess, sid = _get_session(bgloom_sid)
+    sess.library[req.name] = SavedBigraph(
+        name=req.name,
+        state=copy.deepcopy(sess.state),
+        schema=copy.deepcopy(sess.schema) if sess.schema else None,
+        view_state=copy.deepcopy(req.view_state) if req.view_state else None,
+    )
+    return _session_response({"ok": True, "name": req.name}, sid)
+
+
+@app.delete("/api/library/{name}")
+def delete_from_library(name: str, bgloom_sid: str | None = Cookie(None)):
+    """Delete a saved bigraph from the session's library."""
+    sess, sid = _get_session(bgloom_sid)
+    if name not in sess.library:
+        raise HTTPException(404, f"Saved bigraph '{name}' not found")
+    del sess.library[name]
+    return _session_response({"ok": True, "name": name}, sid)

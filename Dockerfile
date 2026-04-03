@@ -18,6 +18,9 @@ RUN pip install --no-cache-dir .
 # Copy built frontend
 COPY --from=frontend /app/frontend/dist frontend/dist
 
+# Copy example .pbg files
+COPY docs/*.pbg docs/
+
 EXPOSE 8891
 
 CMD ["uvicorn", "bigraph_loom.api:app", "--host", "0.0.0.0", "--port", "8891"]
