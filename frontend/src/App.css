@@ -109,8 +109,18 @@ body {
 
 /* ── Sidebar ─────────────────────────────────────────────────────────── */
 
+.sidebar-resize-handle {
+  width: 5px;
+  cursor: col-resize;
+  background: transparent;
+  flex-shrink: 0;
+}
+
+.sidebar-resize-handle:hover {
+  background: #6366f1;
+}
+
 .sidebar {
-  width: 320px;
   flex-shrink: 0;
   height: 100%;
   overflow: hidden;
@@ -331,6 +341,60 @@ body {
 }
 
 .inspector-panel button:hover { background: #4f46e5; }
+
+/* ── Wire editing ─────────────────────────────────────────────────────── */
+
+.wire-field {
+  margin-bottom: 6px;
+  padding: 4px 0;
+  border-bottom: 1px solid #f1f5f9;
+}
+
+.wire-port-name {
+  font-size: 12px;
+  color: #1e293b;
+  font-weight: 500;
+  margin-bottom: 3px;
+}
+
+.wire-port-name::before {
+  content: "\25B8";
+  margin-right: 5px;
+  color: #94a3b8;
+}
+
+.wire-edit-row {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+}
+
+.wire-input {
+  flex: 1;
+  padding: 4px 6px;
+  border: 1px solid #e2e8f0;
+  border-radius: 3px;
+  font-size: 11px;
+  font-family: monospace;
+  color: #334155;
+}
+
+.wire-input:focus {
+  outline: none;
+  border-color: #6366f1;
+}
+
+.wire-input::placeholder { color: #cbd5e1; }
+
+.wire-btn {
+  padding: 3px 8px !important;
+  margin: 0 !important;
+  background: #10b981 !important;
+  font-size: 10px !important;
+  flex-shrink: 0;
+}
+
+.wire-btn:hover { background: #059669 !important; }
 
 .inspector-panel h4 {
   font-size: 12px;
@@ -696,3 +760,150 @@ body {
   color: #94a3b8;
   font-size: 12px;
 }
+
+/* ── Edit panel ──────────────────────────────────────────────────────── */
+
+.edit-panel {
+  width: 100%;
+  background: #ffffff;
+  overflow-y: auto;
+  font-size: 13px;
+  display: flex;
+  flex-direction: column;
+}
+
+.edit-tabs {
+  display: flex;
+  border-bottom: 1px solid #e2e8f0;
+  flex-shrink: 0;
+}
+
+.edit-tabs button {
+  flex: 1;
+  padding: 10px;
+  border: none;
+  background: #f8fafc;
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.edit-tabs button:hover { background: #f1f5f9; }
+
+.edit-tabs .tab-active {
+  background: #ffffff;
+  color: #6366f1;
+  border-bottom: 2px solid #6366f1;
+}
+
+.edit-body {
+  padding: 12px 14px;
+  flex: 1;
+  overflow-y: auto;
+}
+
+.edit-body h4 {
+  font-size: 12px;
+  color: #475569;
+  margin: 10px 0 4px;
+}
+
+.edit-field {
+  margin-bottom: 8px;
+}
+
+.edit-field label {
+  display: block;
+  font-size: 11px;
+  font-weight: 600;
+  color: #94a3b8;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 2px;
+}
+
+.edit-field input,
+.edit-field select {
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid #e2e8f0;
+  border-radius: 4px;
+  font-size: 12px;
+}
+
+.edit-field input:focus,
+.edit-field select:focus {
+  outline: none;
+  border-color: #6366f1;
+}
+
+.edit-field code {
+  font-size: 10px;
+  color: #64748b;
+  margin-left: 4px;
+}
+
+.edit-config {
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid #e2e8f0;
+  border-radius: 4px;
+  font-size: 11px;
+  font-family: monospace;
+  resize: vertical;
+}
+
+.edit-config:focus {
+  outline: none;
+  border-color: #6366f1;
+}
+
+.edit-submit {
+  margin-top: 8px;
+  padding: 6px 14px;
+  background: #6366f1;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.edit-submit:hover { background: #4f46e5; }
+.edit-submit:disabled { opacity: 0.4; cursor: not-allowed; }
+
+.edit-wire-form {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid #e2e8f0;
+}
+
+.registry-list {
+  max-height: 180px;
+  overflow-y: auto;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+}
+
+.registry-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 6px 10px;
+  cursor: pointer;
+  border-bottom: 1px solid #f1f5f9;
+  font-size: 12px;
+}
+
+.registry-item:last-child { border-bottom: none; }
+.registry-item:hover { background: #f8fafc; }
+
+.registry-item.selected {
+  background: #eef2ff;
+  border-left: 3px solid #6366f1;
+}
+
+.registry-item-name { font-weight: 600; color: #1e293b; }
+.registry-item-ports { font-size: 10px; color: #94a3b8; }
+.registry-empty { padding: 12px; text-align: center; color: #94a3b8; font-size: 12px; }

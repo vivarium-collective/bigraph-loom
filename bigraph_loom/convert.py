@@ -106,6 +106,21 @@ def _add_process_node(
     input_ports_schema = _parse_port_schema(value.get("_inputs", {}))
     output_ports_schema = _parse_port_schema(value.get("_outputs", {}))
 
+    inputs = value.get("inputs", {})
+    outputs = value.get("outputs", {})
+
+    # Merge port names from wires and schema so unwired ports are also shown
+    all_input_ports = list(dict.fromkeys(
+        list(inputs.keys()) + list(input_ports_schema.keys())
+    ))
+    all_output_ports = list(dict.fromkeys(
+        list(outputs.keys()) + list(output_ports_schema.keys())
+    ))
+
+    # Wire targets as serializable dicts {port: "path/segments"}
+    input_wires = {p: "/".join(w) if isinstance(w, list) else str(w) for p, w in inputs.items()}
+    output_wires = {p: "/".join(w) if isinstance(w, list) else str(w) for p, w in outputs.items()}
+
     nodes.append({
         "id": node_id,
         "type": "process",
@@ -118,15 +133,15 @@ def _add_process_node(
             "config": value.get("config", {}),
             "interval": value.get("interval"),
             "path": list(node_path),
-            "inputPorts": list(value.get("inputs", {}).keys()),
-            "outputPorts": list(value.get("outputs", {}).keys()),
+            "inputPorts": all_input_ports,
+            "outputPorts": all_output_ports,
             "inputPortsSchema": _safe_serialize(input_ports_schema),
             "outputPortsSchema": _safe_serialize(output_ports_schema),
+            "inputWires": input_wires,
+            "outputWires": output_wires,
         },
     })
 
-    inputs = value.get("inputs", {})
-    outputs = value.get("outputs", {})
     process_parent = node_path[:-1]
 
     for port_name, wire in inputs.items():

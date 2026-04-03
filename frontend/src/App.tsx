@@ -7,8 +7,10 @@ import {
   useNodesState,
   useEdgesState,
   useReactFlow,
+  ConnectionMode,
   type Node,
   type Edge,
+  type Connection,
   type OnSelectionChangeParams,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
@@ -18,10 +20,12 @@ import ProcessNode from "./nodes/ProcessNode";
 import InspectorPanel from "./panels/InspectorPanel";
 import LibraryPanel from "./panels/LibraryPanel";
 import ProcessListPanel from "./panels/ProcessListPanel";
+import EditPanel from "./panels/EditPanel";
 import {
   fetchGraph,
   exportPbg,
   importPbgFile,
+  rewirePort,
   type ViewState,
   type ImportWarning,
   type GraphResponse,
@@ -33,7 +37,7 @@ const JsonPanel = lazy(() => import("./panels/JsonPanel"));
 
 const nodeTypes = { store: StoreNode, process: ProcessNode };
 
-type SidePanel = "inspect" | "json" | "library" | "processes";
+type SidePanel = "inspect" | "json" | "library" | "processes" | "edit";
 
 function AppInner() {
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
@@ -43,6 +47,7 @@ function AppInner() {
   const [hiddenNodes, setHiddenNodes] = useState<Set<string>>(new Set());
   const [sidePanel, setSidePanel] = useState<SidePanel>("inspect");
   const [importWarnings, setImportWarnings] = useState<ImportWarning[]>([]);
+  const [sidebarWidth, setSidebarWidth] = useState(320);
 
   const cachedGraph = useRef<GraphResponse | null>(null);
   const cachedLayout = useRef<{ nodes: Node[]; edges: Edge[] } | null>(null);
@@ -341,6 +346,61 @@ function AppInner() {
     syncPositionsToCache();
   }, [syncPositionsToCache]);
 
+  // ── Connect (drag between nodes) ───────────────────────────────────────
+  const onConnect = useCallback(
+    async (connection: Connection) => {
+      const sourceNode = cachedLayout.current?.nodes.find((n) => n.id === connection.source);
+      const targetNode = cachedLayout.current?.nodes.find((n) => n.id === connection.target);
+      if (!sourceNode || !targetNode) return;
+
+      const srcData = sourceNode.data as any;
+      const tgtData = targetNode.data as any;
+
+      try {
+        if (srcData.nodeType === "process" && connection.sourceHandle) {
+          // Process output port → store: rewire output
+          await rewirePort({
+            process_path: srcData.path,
+            port_name: connection.sourceHandle,
+            direction: "outputs",
+            new_target: tgtData.path,
+          });
+        } else if (tgtData.nodeType === "process" && connection.targetHandle) {
+          // Store → process input port: rewire input
+          await rewirePort({
+            process_path: tgtData.path,
+            port_name: connection.targetHandle,
+            direction: "inputs",
+            new_target: srcData.path,
+          });
+        } else if (srcData.nodeType === "store" && tgtData.nodeType === "store") {
+          // Store-to-store: the node you drag FROM becomes the parent (outer)
+          // The node you drop ON becomes the child (inner)
+          const parentPath = srcData.path;
+          const childPath = tgtData.path;
+          console.log(`Nesting ${childPath.join("/")} into ${parentPath.join("/")}`);
+          const res = await fetch("/api/nest", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              source_path: childPath,
+              target_parent: parentPath,
+            }),
+          });
+          if (!res.ok) {
+            const err = await res.json().catch(() => ({}));
+            console.error("Nest failed:", err.detail || res.status);
+            return;
+          }
+        }
+        loadGraph();
+      } catch (err: any) {
+        console.error("Connect failed:", err.message);
+      }
+    },
+    [loadGraph]
+  );
+
   // ── Process toggle ────────────────────────────────────────────────────
   const handleToggleProcess = useCallback((nodeId: string) => {
     setHiddenNodes((prev) => {
@@ -371,6 +431,18 @@ function AppInner() {
     setHiddenNodes((prev) => new Set(prev).add(nodeId));
   }, []);
 
+  const handleNew = useCallback(async () => {
+    // Load an empty bigraph
+    await fetch("/api/load", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ state: {} }),
+    });
+    setCollapsed(new Set());
+    setHiddenNodes(new Set());
+    loadGraph();
+  }, [loadGraph]);
+
   const handleImport = useCallback(() => {
     const input = document.createElement("input");
     input.type = "file";
@@ -396,6 +468,26 @@ function AppInner() {
     nodes.filter((n) => (n.data as any)?.isGroup), [nodes]);
   const allStoreNodes = useMemo(() =>
     nodes.filter((n) => n.type !== "process"), [nodes]);
+  const storePaths = useMemo(() =>
+    groupNodes.map((n) => (n.data as any).path as string[]), [groupNodes]);
+
+  // Sidebar resize
+  const handleResizeStart = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startW = sidebarWidth;
+    const onMove = (ev: MouseEvent) => setSidebarWidth(Math.max(200, Math.min(800, startW + startX - ev.clientX)));
+    const onUp = () => {
+      document.removeEventListener("mousemove", onMove);
+      document.removeEventListener("mouseup", onUp);
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+    };
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+    document.addEventListener("mousemove", onMove);
+    document.addEventListener("mouseup", onUp);
+  }, [sidebarWidth]);
 
   return (
     <div className="app-container">
@@ -409,6 +501,7 @@ function AppInner() {
             <button onClick={handleCollapseAll} title="Collapse all groups">Collapse</button>
           </div>
           <span className="header-sep" />
+          <button className="header-btn" onClick={handleNew}>New</button>
           <button className="header-btn" onClick={handleImport}>Import</button>
           <button className="header-btn" onClick={exportPbg}>Export</button>
           <span className="header-sep" />
@@ -421,6 +514,10 @@ function AppInner() {
               className={sidePanel === "processes" ? "panel-tab-active" : ""}
               onClick={() => setSidePanel(sidePanel === "processes" ? "inspect" : "processes")}
             >Processes</button>
+            <button
+              className={sidePanel === "edit" ? "panel-tab-active" : ""}
+              onClick={() => setSidePanel(sidePanel === "edit" ? "inspect" : "edit")}
+            >Edit</button>
             <button
               className={sidePanel === "json" ? "panel-tab-active" : ""}
               onClick={() => setSidePanel(sidePanel === "json" ? "inspect" : "json")}
@@ -450,6 +547,8 @@ function AppInner() {
             onSelectionChange={onSelectionChange}
             onNodeDoubleClick={onNodeDoubleClick}
             onNodeDragStop={onNodeDragStop}
+            onConnect={onConnect}
+            connectionMode={ConnectionMode.Loose}
             fitView
             minZoom={0.1}
             maxZoom={4}
@@ -459,7 +558,8 @@ function AppInner() {
             <Controls />
           </ReactFlow>
         </div>
-        <div className="sidebar">
+        <div className="sidebar-resize-handle" onMouseDown={handleResizeStart} />
+        <div className="sidebar" style={{ width: sidebarWidth }}>
           {sidePanel === "inspect" ? (
             <InspectorPanel
               node={selectedNode}
@@ -480,6 +580,8 @@ function AppInner() {
               onHideAll={handleHideAllProcesses}
               onShowAll={handleShowAllProcesses}
             />
+          ) : sidePanel === "edit" ? (
+            <EditPanel storePaths={storePaths} onUpdate={loadGraph} />
           ) : (
             <LibraryPanel
               onUpdate={loadGraph}

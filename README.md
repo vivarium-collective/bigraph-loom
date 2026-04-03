@@ -1,24 +1,24 @@
 # Bigraph Loom
 
-Interactive visual editor for [process-bigraphs](https://github.com/vivarium-collective/process-bigraph). Provides a web-based interface for exploring, editing, and composing bigraph models — with full integration into the process-bigraph type system.
+Interactive visual editor for [process-bigraphs](https://github.com/vivarium-collective/process-bigraph). Explore, edit, and compose bigraph models in a web interface with full integration into the process-bigraph type system.
 
 ![Bigraph Loom — hierarchy view of a cell model with process inspector](docs/screenshot_inspector.png)
 
 ## Features
 
-- **Visualize** process-bigraphs with stores (circles), processes (rectangles), and wires (edges)
-- **Two view modes**: nested (stores inside stores) and hierarchical (place graph with processes to the side)
-- **Inspect** nodes — see types, values, process ports with type annotations, config schemas, update function source code
-- **Edit** values, configs, and rewire process ports to different stores
-- **JSON editor** — view and edit the raw bigraph JSON with syntax highlighting and validation
-- **Add/remove** stores and processes from a side panel, with access to the full Core registry
-- **Import/export** `.pbg` files (JSON format)
-- **Collapse/expand** groups by double-clicking
-- **Schema validation** via `core.check()`
-- **Custom Core support** — pass a Core with your own registered processes and types
+- **Visualize** process-bigraphs with stores (circles), processes (rectangles), place edges (hierarchy), and wire edges (port connections)
+- **Inspect** nodes — click to see types, values, port types, config, update function source code
+- **Edit wiring** — type new wire paths in the inspector or drag between port handles and store nodes
+- **Edit hierarchy** — drag store-to-store to nest nodes, or use the "Move Into" dropdown
+- **Create** stores, processes from the Core registry, or custom processes via the Edit panel
+- **JSON editor** — view and edit the raw bigraph with syntax highlighting and schema validation
+- **Library** — switch between example `.pbg` files, save/load your own with preserved view state (positions, collapsed groups, zoom)
+- **Process list** — toggle process visibility with checkboxes
+- **View controls** — Compact (tight grid), Hierarchy (outers above inners), Expand (show all), Collapse (collapse all groups)
+- **Import/export** `.pbg` files
 - **Multi-user sessions** — each browser gets isolated state when deployed as a service
 - **Jupyter integration** — embed in notebooks via IFrame
-- **Graceful handling** of unregistered processes — imported bigraphs display even if the processes aren't in the current Core
+- **Graceful handling** of unregistered processes — imported bigraphs display even if processes aren't in the current Core
 
 ## Installation
 
@@ -26,14 +26,7 @@ Interactive visual editor for [process-bigraphs](https://github.com/vivarium-col
 
 ```bash
 pip install -e .
-```
-
-Build the frontend (requires Node.js):
-
-```bash
-cd frontend
-npm install
-npm run build
+cd frontend && npm install && npm run build
 ```
 
 ### Docker
@@ -45,148 +38,111 @@ docker run -p 8891:8891 bigraph-loom
 
 ## Quick Start
 
-### As a web app
-
 ```python
 from bigraph_loom import run_server
 
-run_server()  # opens http://127.0.0.1:8891 with an example bigraph
-```
+# Start with the bundled ecoli model
+run_server()
 
-### With your own state
-
-```python
-from bigraph_loom import run_server
-
-state = {
-    'A': 1.0,
-    'B': 0.0,
-    'reaction': {
-        '_type': 'process',
-        'address': 'local:Reaction',
-        'config': {'rate': 0.1},
-        'inputs': {'substrate': ['A']},
-        'outputs': {'product': ['B']},
-    },
-}
-
-run_server(state=state)
-```
-
-### With a custom Core
-
-```python
-from process_bigraph import allocate_core
-from bigraph_loom import run_server
-
-core = allocate_core()
-# Register your processes and types on core...
-
-run_server(state=my_state, schema=my_schema, core=core)
+# Or with your own state
+run_server(state=my_state, schema=my_schema, core=my_core)
 ```
 
 ### In Jupyter
 
 ```python
 from bigraph_loom.jupyter import show
-
 show(state=my_state, core=my_core, height=700)
 ```
 
-### Import a .pbg file
-
-Use the **Import .pbg** button in the header to load any `.pbg` or `.json` file. The bigraph will display even if some processes are not registered in the current Core — unregistered processes show a warning badge.
-
 ## Deploying as a Public Service
 
-Bigraph Loom includes session support — each visitor gets their own isolated bigraph state. To deploy publicly:
+### Render (recommended)
 
-### Render (recommended — free tier)
-
-1. Push to GitHub (already done: [vivarium-collective/bigraph-loom](https://github.com/vivarium-collective/bigraph-loom))
-2. Go to [render.com](https://render.com) and create a new **Web Service**
-3. Connect the `vivarium-collective/bigraph-loom` repository
-4. Render auto-detects the Dockerfile. Configure:
-   - **Environment**: Docker
-   - **Instance type**: Free (or Starter for better performance)
-   - **Port**: 8891
-5. Click **Deploy**
-
-Your app will be live at `https://bigraph-loom.onrender.com` (or similar).
+1. Connect the [vivarium-collective/bigraph-loom](https://github.com/vivarium-collective/bigraph-loom) repo
+2. Render auto-detects the Dockerfile — set port to `8891`
+3. Deploy
 
 ### Fly.io
 
 ```bash
-# Install flyctl: https://fly.io/docs/flyctl/install/
-fly launch          # auto-detects Dockerfile, creates app
-fly deploy          # builds and deploys
+fly launch && fly deploy
 ```
 
-### Railway
-
-1. Go to [railway.app](https://railway.app)
-2. New Project → Deploy from GitHub repo
-3. It detects the Dockerfile and deploys automatically
-
-### Any VPS (DigitalOcean, AWS, etc.)
+### Docker on any server
 
 ```bash
-# On the server
-git clone https://github.com/vivarium-collective/bigraph-loom.git
-cd bigraph-loom
 docker build -t bigraph-loom .
 docker run -d -p 8891:8891 --restart unless-stopped bigraph-loom
 ```
 
-Then point a domain at the server and put it behind a reverse proxy (nginx/caddy) with HTTPS.
+## UI Overview
 
-### Session behavior
+### Header controls
 
-- Each browser gets its own session via a cookie (`bgloom_sid`)
-- Sessions are isolated — one user's edits don't affect others
-- Sessions expire after 1 hour of inactivity
-- The default bigraph (set via `load_bigraph()` or the example) is what new sessions start with
-- The Core (registered types and processes) is shared across all sessions
+```
+[Compact | Hierarchy | Expand | Collapse]  [New] [Import] [Export]  [Library | Processes | Edit | JSON]
+```
+
+- **Compact** — gather all visible nodes into a tight grid
+- **Hierarchy** — dagre tree layout with outers above inners, processes to the side
+- **Expand** — show all hidden/collapsed nodes and re-layout
+- **Collapse** — collapse all group stores
+- **New** — start with a blank bigraph
+- **Import / Export** — load and save `.pbg` files
+
+### Side panels
+
+- **Inspector** (click any node) — path, type info, editable port wires, config, process source, "Move Into" for nesting, hide/delete
+- **Library** — bundled examples + saved bigraphs with view state
+- **Processes** — checklist to toggle process visibility
+- **Edit** — add stores, registry processes, or custom processes
+- **JSON** — full editor with syntax highlighting, validate (schema check), and apply
+
+### Interactions
+
+- **Click** a node to inspect it
+- **Double-click** a group store to collapse/expand, or any other node to hide it
+- **Drag** a node to reposition it
+- **Drag** from a process port handle to a store to wire them
+- **Drag** from a store to another store to nest (source becomes parent)
 
 ## Architecture
 
-- **Backend**: Python / FastAPI — serves the API and built frontend
-  - `bigraph_loom/api.py` — REST endpoints for graph data, editing, import/export, Core integration
-  - `bigraph_loom/convert.py` — converts bigraph state dicts to React Flow nodes and edges
-  - `bigraph_loom/session.py` — session management for multi-user isolation
-  - `bigraph_loom/server.py` — server runner with browser auto-open
+- **Backend**: Python / FastAPI
+  - `bigraph_loom/api.py` — REST endpoints with session-scoped state
+  - `bigraph_loom/convert.py` — bigraph state → React Flow nodes and edges
+  - `bigraph_loom/session.py` — multi-user session management
+  - `bigraph_loom/server.py` — server runner, loads bundled examples
   - `bigraph_loom/jupyter.py` — Jupyter notebook integration
 - **Frontend**: TypeScript / React / [React Flow](https://reactflow.dev/)
-  - Custom node types for stores, processes, and groups
-  - Inspector panel with editing, rewiring, and process source display
-  - JSON editor panel with CodeMirror
-  - Add panel for creating new processes and stores
-  - Dagre-based automatic layout
+  - Custom store and process node components with port handles
+  - Inspector, Library, Process List, Edit, and JSON panels
+  - Dagre-based hierarchical layout
+  - Lazy-loaded CodeMirror for JSON editing
 
 ## API Endpoints
 
-All session-scoped endpoints use a `bgloom_sid` cookie for state isolation.
+All session-scoped endpoints use a `bgloom_sid` cookie.
 
 | Endpoint | Method | Description |
 |---|---|---|
-| `/api/graph` | GET | React Flow nodes and edges (`?view=nested\|hierarchical`) |
-| `/api/state` | GET | Raw bigraph state and schema |
-| `/api/state` | PUT | Replace full state (with optional validation) |
+| `/api/graph` | GET | React Flow nodes and edges |
+| `/api/state` | GET/PUT | Raw bigraph state (PUT validates optionally) |
 | `/api/export` | GET | Download `.pbg` file |
-| `/api/import` | POST | Upload and load a `.pbg` file |
-| `/api/load` | POST | Load state via JSON body |
-| `/api/node/{path}` | GET | Node details |
-| `/api/node/{path}/value` | PUT | Update a store value |
+| `/api/import` | POST | Upload `.pbg` file |
+| `/api/load` | POST | Load state from JSON body |
+| `/api/node/{path}` | GET/DELETE | Get or delete a node |
+| `/api/node/{path}/value` | PUT | Update store value |
 | `/api/node/{path}/config` | PUT | Update process config |
-| `/api/process` | POST | Add a new process |
-| `/api/store` | POST | Add a new store |
+| `/api/process` | POST | Add a process |
+| `/api/store` | POST | Add a store |
 | `/api/nest` | POST | Move a node under a new parent |
-| `/api/rewire` | POST | Rewire a process port |
-| `/api/node/{path}` | DELETE | Remove a node |
-| `/api/check` | POST | Run `core.check()` on state |
-| `/api/fill` | POST | Fill state with schema defaults |
-| `/api/infer` | POST | Infer schema from state |
-| `/api/registry` | GET | List registered processes (shared) |
-| `/api/types` | GET | List registered types (shared) |
-| `/api/core-info` | GET | Core class, source file, counts (shared) |
-| `/api/process-source/{addr}` | GET | Process source, ports, config schema (shared) |
+| `/api/rewire` | POST | Change a port's wire target |
+| `/api/check` | POST | Run `core.check()` |
+| `/api/library` | GET | List examples + saved bigraphs |
+| `/api/library/load/{name}` | POST | Load from library |
+| `/api/library/save` | POST | Save current state + view |
+| `/api/registry` | GET | List registered processes |
+| `/api/process-source/{addr}` | GET | Process source, ports, config schema |
+| `/api/core-info` | GET | Core class, type/process counts |

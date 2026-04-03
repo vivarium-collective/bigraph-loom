@@ -11,3 +11,4 @@ frontend/dist/
 *.log
 .idea/
 out/
+*.tsbuildinfo

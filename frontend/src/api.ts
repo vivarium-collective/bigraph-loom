@@ -51,6 +51,20 @@ export async function deleteNode(path: string[]): Promise<void> {
   if (!res.ok) throw new Error(`Failed to delete: ${res.status}`);
 }
 
+export async function rewirePort(params: {
+  process_path: string[];
+  port_name: string;
+  direction: "inputs" | "outputs";
+  new_target: string[];
+}): Promise<void> {
+  const res = await fetch(`${BASE}/rewire`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(params),
+  });
+  if (!res.ok) throw new Error(`Failed to rewire: ${res.status}`);
+}
+
 export interface ProcessInfo {
   name: string;
   address: string;

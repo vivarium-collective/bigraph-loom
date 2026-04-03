@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import type { Node } from "@xyflow/react";
 import type { BigraphNodeData } from "../types";
-import { updateNodeValue, updateNodeConfig, deleteNode, fetchProcessSource, type ProcessInfo } from "../api";
+import { updateNodeValue, updateNodeConfig, deleteNode, fetchProcessSource, rewirePort, type ProcessInfo } from "../api";
 
 interface Props {
   node: Node | null;
@@ -16,6 +16,8 @@ export default function InspectorPanel({ node, onUpdate, onHide, groupNodes }: P
   const [configEdits, setConfigEdits] = useState<Record<string, string>>({});
   const [processInfo, setProcessInfo] = useState<ProcessInfo | null>(null);
   const [showUpdateSource, setShowUpdateSource] = useState(false);
+  const [wireEdits, setWireEdits] = useState<Record<string, string>>({});
+  const [nestTarget, setNestTarget] = useState("");
 
   const data = node?.data as BigraphNodeData | undefined;
 
@@ -29,6 +31,18 @@ export default function InspectorPanel({ node, onUpdate, onHide, groupNodes }: P
       for (const [k, v] of Object.entries(data.config)) entries[k] = String(v);
       setConfigEdits(entries);
 
+      // Initialize wire edits from current wires
+      const wires: Record<string, string> = {};
+      const iw = (data as any).inputWires ?? {};
+      const ow = (data as any).outputWires ?? {};
+      for (const p of (data as any).inputPorts ?? []) {
+        wires[`in:${p}`] = iw[p] ?? "";
+      }
+      for (const p of (data as any).outputPorts ?? []) {
+        wires[`out:${p}`] = ow[p] ?? "";
+      }
+      setWireEdits(wires);
+
       const address = (data as any).address;
       if (address) {
         fetchProcessSource(address).then(setProcessInfo).catch(() => setProcessInfo(null));
@@ -39,6 +53,7 @@ export default function InspectorPanel({ node, onUpdate, onHide, groupNodes }: P
       setProcessInfo(null);
     }
     setShowUpdateSource(false);
+    setNestTarget("");
   }, [node?.id]);
 
   if (!node || !data) {
@@ -75,6 +90,19 @@ export default function InspectorPanel({ node, onUpdate, onHide, groupNodes }: P
     onUpdate();
   }
 
+  async function handleRewire(portName: string, direction: "inputs" | "outputs") {
+    const key = direction === "inputs" ? `in:${portName}` : `out:${portName}`;
+    const target = wireEdits[key]?.trim();
+    if (!target) return;
+    await rewirePort({
+      process_path: path,
+      port_name: portName,
+      direction,
+      new_target: target.split("/"),
+    });
+    onUpdate();
+  }
+
   async function handleDelete() {
     if (!confirm(`Delete "${data!.label}" and all its children?`)) return;
     await deleteNode(path);
@@ -97,8 +125,8 @@ export default function InspectorPanel({ node, onUpdate, onHide, groupNodes }: P
           )}
         </h3>
         <div className="inspector-header-actions">
-          <button className="hide-btn" onClick={() => onHide(node.id)} title="Hide from view">Hide</button>
-          <button className="delete-btn" onClick={handleDelete} title="Delete permanently">Delete</button>
+          <button className="hide-btn" onClick={() => onHide(node.id)}>Hide</button>
+          <button className="delete-btn" onClick={handleDelete}>Delete</button>
         </div>
       </div>
 
@@ -164,26 +192,59 @@ export default function InspectorPanel({ node, onUpdate, onHide, groupNodes }: P
             </div>
           )}
 
+          {/* Input Ports with wiring */}
           <h4>Input Ports</h4>
-          <ul className="port-list">
-            {((data as any).inputPorts ?? []).map((p: string) => (
-              <li key={p}>
-                {p}
-                {inputTypes[p] != null && <code className="port-type">{String(inputTypes[p])}</code>}
-              </li>
-            ))}
-          </ul>
+          {((data as any).inputPorts ?? []).map((p: string) => {
+            const key = `in:${p}`;
+            const currentWire = wireEdits[key] ?? "";
+            const typeStr = inputTypes[p] != null ? String(inputTypes[p]) : null;
+            return (
+              <div className="wire-field" key={key}>
+                <div className="wire-port-name">
+                  {p}
+                  {typeStr && <code className="port-type">{typeStr}</code>}
+                </div>
+                <div className="wire-edit-row">
+                  <input
+                    className="wire-input"
+                    value={currentWire}
+                    onChange={(e) => setWireEdits({ ...wireEdits, [key]: e.target.value })}
+                    placeholder="target/path"
+                    onKeyDown={(e) => e.key === "Enter" && handleRewire(p, "inputs")}
+                  />
+                  <button className="wire-btn" onClick={() => handleRewire(p, "inputs")} title="Update wire">Wire</button>
+                </div>
+              </div>
+            );
+          })}
 
+          {/* Output Ports with wiring */}
           <h4>Output Ports</h4>
-          <ul className="port-list">
-            {((data as any).outputPorts ?? []).map((p: string) => (
-              <li key={p}>
-                {p}
-                {outputTypes[p] != null && <code className="port-type">{String(outputTypes[p])}</code>}
-              </li>
-            ))}
-          </ul>
+          {((data as any).outputPorts ?? []).map((p: string) => {
+            const key = `out:${p}`;
+            const currentWire = wireEdits[key] ?? "";
+            const typeStr = outputTypes[p] != null ? String(outputTypes[p]) : null;
+            return (
+              <div className="wire-field" key={key}>
+                <div className="wire-port-name">
+                  {p}
+                  {typeStr && <code className="port-type">{typeStr}</code>}
+                </div>
+                <div className="wire-edit-row">
+                  <input
+                    className="wire-input"
+                    value={currentWire}
+                    onChange={(e) => setWireEdits({ ...wireEdits, [key]: e.target.value })}
+                    placeholder="target/path"
+                    onKeyDown={(e) => e.key === "Enter" && handleRewire(p, "outputs")}
+                  />
+                  <button className="wire-btn" onClick={() => handleRewire(p, "outputs")} title="Update wire">Wire</button>
+                </div>
+              </div>
+            );
+          })}
 
+          {/* Config */}
           {Object.keys(configEdits).length > 0 && (
             <>
               <h4>Config</h4>
@@ -200,6 +261,7 @@ export default function InspectorPanel({ node, onUpdate, onHide, groupNodes }: P
             </>
           )}
 
+          {/* Update function */}
           {processInfo?.update_signature && (
             <div className="inspector-section">
               <h4>
@@ -222,6 +284,55 @@ export default function InspectorPanel({ node, onUpdate, onHide, groupNodes }: P
               )}
             </div>
           )}
+        </div>
+      )}
+
+      {/* Move Into (nest under another store) */}
+      {groupNodes.length > 0 && (
+        <div className="inspector-section">
+          <h4>Move Into</h4>
+          <div className="wire-edit-row">
+            <select
+              className="wire-input"
+              value={nestTarget}
+              onChange={(e) => setNestTarget(e.target.value)}
+            >
+              <option value="">— select parent —</option>
+              {groupNodes
+                .filter((g) => {
+                  const gPath = ((g.data as any).path as string[]).join("/");
+                  const selfPath = path.join("/");
+                  return gPath !== selfPath && !gPath.startsWith(selfPath + "/");
+                })
+                .map((g) => {
+                  const gPath = ((g.data as any).path as string[]).join("/");
+                  return <option key={g.id} value={gPath}>{gPath}</option>;
+                })}
+            </select>
+            <button
+              className="wire-btn"
+              disabled={!nestTarget}
+              onClick={async () => {
+                if (!nestTarget) return;
+                try {
+                  await fetch("/api/nest", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                      source_path: path,
+                      target_parent: nestTarget.split("/"),
+                    }),
+                  });
+                  setNestTarget("");
+                  onUpdate();
+                } catch (err: any) {
+                  console.error("Nest failed:", err.message);
+                }
+              }}
+            >
+              Move
+            </button>
+          </div>
         </div>
       )}
     </div>
