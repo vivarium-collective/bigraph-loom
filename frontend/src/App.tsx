@@ -83,7 +83,7 @@ function AppInner() {
     return data;
   }, []);
 
-  // ── Compute layout ────────────────────────────────────────────────────
+  // ── Compute layout (only on visible nodes) ─────────────────────────────
   const computeLayout = useCallback(
     (data: GraphResponse): { nodes: Node[]; edges: Edge[] } => {
       if (cachedLayout.current && cachedLayout.current.nodes.length > 0) {
@@ -92,9 +92,56 @@ function AppInner() {
 
       const allNodes = data.nodes as unknown as Node[];
       const allEdges = data.edges as unknown as Edge[];
-      let laid = applyLayout(allNodes, allEdges);
 
+      // Pre-filter by pending view state collapse/hidden BEFORE layout
       const vs = pendingViewState.current;
+      let nodesToLayout = allNodes;
+      let edgesToLayout = allEdges;
+
+      if (vs) {
+        const collapsedSet = new Set(vs.collapsed ?? []);
+        const hiddenSet = new Set(vs.hidden ?? []);
+
+        if (collapsedSet.size > 0 || hiddenSet.size > 0) {
+          // Build place-children map for descendant calculation
+          const placeChildren = new Map<string, string[]>();
+          for (const e of allEdges) {
+            if ((e.data as any)?.edgeType === "place") {
+              const list = placeChildren.get(e.source) ?? [];
+              list.push(e.target);
+              placeChildren.set(e.source, list);
+            }
+          }
+          const getDesc = (ids: Iterable<string>): Set<string> => {
+            const desc = new Set<string>();
+            const queue = [...ids];
+            while (queue.length) {
+              const id = queue.shift()!;
+              for (const child of placeChildren.get(id) ?? []) {
+                if (!desc.has(child)) { desc.add(child); queue.push(child); }
+              }
+            }
+            return desc;
+          };
+
+          const collapsedDesc = getDesc(collapsedSet);
+          const hiddenWithDesc = new Set(hiddenSet);
+          for (const id of hiddenSet) {
+            for (const d of getDesc([id])) hiddenWithDesc.add(d);
+          }
+
+          const excludeIds = new Set([...collapsedDesc, ...hiddenWithDesc]);
+          nodesToLayout = allNodes.filter((n) => !excludeIds.has(n.id));
+          const visibleIds = new Set(nodesToLayout.map((n) => n.id));
+          edgesToLayout = allEdges.filter(
+            (e) => visibleIds.has(e.source) && visibleIds.has(e.target)
+          );
+        }
+      }
+
+      let laid = applyLayout(nodesToLayout, edgesToLayout);
+
+      // Restore saved positions if available
       if (vs?.positions && Object.keys(vs.positions).length > 0) {
         laid = laid.map((n) => {
           const copy = { ...n };
@@ -112,7 +159,10 @@ function AppInner() {
         pendingViewState.current = null;
       }
 
-      cachedLayout.current = { nodes: laid, edges: allEdges };
+      // Cache ALL nodes (not just visible) so expand works, but with layout positions applied
+      const laidIds = new Map(laid.map((n) => [n.id, n]));
+      const fullNodes = allNodes.map((n) => laidIds.get(n.id) ?? n);
+      cachedLayout.current = { nodes: fullNodes, edges: allEdges };
       return cachedLayout.current;
     },
     [reactFlow]
@@ -197,11 +247,44 @@ function AppInner() {
 
   useEffect(() => { loadGraph(); }, [loadGraph]);
 
-  // Re-filter when collapsed/hidden change
+  // Re-filter when collapsed/hidden change. Layout newly visible nodes.
   useEffect(() => {
     if (!cachedLayout.current) return;
+    const allNodes = cachedLayout.current.nodes;
+    const allEdges = cachedLayout.current.edges;
+
+    // Find which nodes will become visible after filtering
+    const currentCollapsed = collapsedRef.current;
+    const currentHidden = hiddenRef.current;
+
+    const hiddenWithDesc = new Set(currentHidden);
+    for (const id of currentHidden) {
+      for (const d of getDescendants([id])) hiddenWithDesc.add(d);
+    }
+    const collapsedDesc = getDescendants(currentCollapsed);
+    const excludeIds = new Set([...collapsedDesc, ...hiddenWithDesc]);
+
+    const visibleNodes = allNodes.filter((n) => !excludeIds.has(n.id));
+
+    // Check if any visible nodes have (0,0) position (never laid out)
+    const needsLayout = visibleNodes.some(
+      (n) => n.position.x === 0 && n.position.y === 0
+    );
+
+    if (needsLayout && visibleNodes.length > 0) {
+      const visibleIds = new Set(visibleNodes.map((n) => n.id));
+      const visibleEdges = allEdges.filter(
+        (e) => visibleIds.has(e.source) && visibleIds.has(e.target)
+      );
+      const laid = applyLayout(visibleNodes, visibleEdges);
+
+      // Merge laid-out positions back into cache
+      const laidMap = new Map(laid.map((n) => [n.id, n]));
+      cachedLayout.current.nodes = allNodes.map((n) => laidMap.get(n.id) ?? n);
+    }
+
     applyFilter(cachedLayout.current.nodes, cachedLayout.current.edges);
-  }, [collapsed, hiddenNodes, applyFilter]);
+  }, [collapsed, hiddenNodes, applyFilter, getDescendants]);
 
   // ── Sync positions to cache ───────────────────────────────────────────
   const syncPositionsToCache = useCallback(() => {
@@ -235,8 +318,13 @@ function AppInner() {
   }, [nodes, collapsed, hiddenNodes, reactFlow]);
 
   const restoreViewState = useCallback((vs: ViewState) => {
-    setCollapsed(new Set(vs.collapsed ?? []));
-    setHiddenNodes(new Set(vs.hidden ?? []));
+    const newCollapsed = new Set(vs.collapsed ?? []);
+    const newHidden = new Set(vs.hidden ?? []);
+    setCollapsed(newCollapsed);
+    setHiddenNodes(newHidden);
+    // Update refs immediately so loadGraph uses correct values
+    collapsedRef.current = newCollapsed;
+    hiddenRef.current = newHidden;
     pendingViewState.current = vs;
     cachedLayout.current = null;
   }, []);

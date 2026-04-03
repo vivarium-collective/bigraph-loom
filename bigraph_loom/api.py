@@ -69,9 +69,29 @@ def _get_session(sid: str | None) -> tuple[Session, str]:
     return sessions.get(new_sid), new_sid
 
 
-def _session_response(data: dict, sid: str) -> JSONResponse:
-    """Return JSON with session cookie set."""
-    resp = JSONResponse(content=data)
+class _SafeEncoder(json.JSONEncoder):
+    """JSON encoder that converts NaN/Infinity to null and non-serializable to str."""
+    def default(self, o: Any) -> Any:
+        return str(o)
+
+    def encode(self, o: Any) -> str:
+        return super().encode(self._clean(o))
+
+    def _clean(self, obj: Any) -> Any:
+        import math
+        if isinstance(obj, float) and (math.isnan(obj) or math.isinf(obj)):
+            return None
+        if isinstance(obj, dict):
+            return {k: self._clean(v) for k, v in obj.items()}
+        if isinstance(obj, (list, tuple)):
+            return [self._clean(v) for v in obj]
+        return obj
+
+
+def _session_response(data: dict, sid: str) -> Response:
+    """Return JSON with session cookie set. Handles NaN/Infinity floats."""
+    content = _SafeEncoder().encode(data)
+    resp = Response(content=content, media_type="application/json")
     resp.set_cookie(
         SESSION_COOKIE, sid,
         httponly=True, samesite="lax", max_age=3600,
@@ -103,8 +123,8 @@ async def _startup():
                     pass
 
     # If no default state set yet, use ecoli_state example
-    if not sessions._default_state and "ecoli_wcm" in sessions.examples:
-        ex = sessions.examples["ecoli_wcm"]
+    if not sessions._default_state and "cell_environment" in sessions.examples:
+        ex = sessions.examples["cell_environment"]
         sessions.set_defaults(ex.state, ex.schema)
 
     # Mount built frontend if it exists (for Docker / production)
@@ -294,7 +314,7 @@ def _check_unregistered_processes(state: dict, path: tuple = ()) -> list[dict]:
 @app.get("/api/graph")
 def get_graph(bgloom_sid: str | None = Cookie(None)):
     sess, sid = _get_session(bgloom_sid)
-    data = bigraph_to_flow(sess.state, schema=sess.schema)
+    data = bigraph_to_flow(sess.state, schema=sess.schema, core=_get_core())
     return _session_response(data, sid)
 
 
@@ -453,10 +473,10 @@ def post_rewire(req: RewireRequest, bgloom_sid: str | None = Cookie(None)):
     node = _get_at_path(sess.state, req.process_path)
     if not is_process(node):
         raise HTTPException(400, "Not a process node")
-    wires = node.get(req.direction, {})
-    if req.port_name not in wires:
-        raise HTTPException(404, f"Port '{req.port_name}' not found in {req.direction}")
-    wires[req.port_name] = req.new_target
+    # Create the wires dict if it doesn't exist, and add/update the port
+    if req.direction not in node:
+        node[req.direction] = {}
+    node[req.direction][req.port_name] = req.new_target
     return _session_response(
         {"ok": True, "process": req.process_path, "port": req.port_name, "target": req.new_target},
         sid,
@@ -570,7 +590,7 @@ def get_library(bgloom_sid: str | None = Cookie(None)):
     """List available bigraphs: built-in examples + user's saved bigraphs."""
     sess, sid = _get_session(bgloom_sid)
     examples = [
-        {"name": name, "source": "example", "has_view": sessions.examples[name].view_state is not None}
+        {"name": name, "source": "example", "has_view": bool(sessions.examples[name].view_state and sessions.examples[name].view_state.get("positions"))}
         for name in sessions.examples
     ]
     saved = [

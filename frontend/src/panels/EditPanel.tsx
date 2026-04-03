@@ -85,11 +85,11 @@ export default function EditPanel({ storePaths, onUpdate }: Props) {
     const path = regParent ? [...regParent.split("/"), regName] : [regName];
     const inputs: Record<string, string[]> = {};
     for (const [port, wire] of Object.entries(regInputs)) {
-      if (wire) inputs[port] = wire.split("/");
+      inputs[port] = wire ? wire.split("/") : [];
     }
     const outputs: Record<string, string[]> = {};
     for (const [port, wire] of Object.entries(regOutputs)) {
-      if (wire) outputs[port] = wire.split("/");
+      outputs[port] = wire ? wire.split("/") : [];
     }
     await fetch(`${BASE}/process`, {
       method: "POST",

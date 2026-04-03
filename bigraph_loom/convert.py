@@ -45,6 +45,7 @@ def resolve_wire(parent_path: tuple[str, ...], wire: list[str]) -> tuple[str, ..
 def bigraph_to_flow(
     state: dict,
     schema: dict | None = None,
+    core: object | None = None,
     path: tuple[str, ...] = (),
     parent_id: str | None = None,
 ) -> dict[str, list[dict]]:
@@ -66,9 +67,9 @@ def bigraph_to_flow(
         node_id = path_to_id(node_path)
 
         if is_process(value):
-            _add_process_node(nodes, edges, key, value, node_path, node_id)
+            _add_process_node(nodes, edges, key, value, node_path, node_id, core)
         elif isinstance(value, dict):
-            _add_store_node(nodes, edges, key, value, schema, node_path, node_id)
+            _add_store_node(nodes, edges, key, value, schema, core, node_path, node_id)
         else:
             _add_leaf_node(nodes, key, value, node_path, node_id)
 
@@ -100,11 +101,25 @@ def _add_process_node(
     value: dict,
     node_path: tuple[str, ...],
     node_id: str,
+    core: object | None = None,
 ) -> None:
     address = normalize_address(value.get("address", ""))
     process_type = value.get("_type", "process")
     input_ports_schema = _parse_port_schema(value.get("_inputs", {}))
     output_ports_schema = _parse_port_schema(value.get("_outputs", {}))
+
+    # If no port schema from state, try the Core registry
+    if not input_ports_schema and not output_ports_schema and core is not None:
+        name = address.split(":", 1)[-1] if ":" in address else address
+        try:
+            cls = core.link_registry[name]
+            instance = cls({}, core=core)
+            for port, ptype in instance.inputs().items():
+                input_ports_schema.setdefault(port, str(ptype))
+            for port, ptype in instance.outputs().items():
+                output_ports_schema.setdefault(port, str(ptype))
+        except Exception:
+            pass
 
     inputs = value.get("inputs", {})
     outputs = value.get("outputs", {})
@@ -130,7 +145,7 @@ def _add_process_node(
             "nodeType": "process",
             "processType": process_type,
             "address": address,
-            "config": value.get("config", {}),
+            "config": _summarize_config(value.get("config", {})),
             "interval": value.get("interval"),
             "path": list(node_path),
             "inputPorts": all_input_ports,
@@ -183,6 +198,7 @@ def _add_store_node(
     key: str,
     value: dict,
     schema: dict | None,
+    core: object | None,
     node_path: tuple[str, ...],
     node_id: str,
 ) -> None:
@@ -197,7 +213,7 @@ def _add_store_node(
             "path": list(node_path),
         },
     })
-    child = bigraph_to_flow(value, schema=schema, path=node_path, parent_id=node_id)
+    child = bigraph_to_flow(value, schema=schema, core=core, path=node_path, parent_id=node_id)
     nodes.extend(child["nodes"])
     edges.extend(child["edges"])
 
@@ -312,6 +328,23 @@ def _parse_port_entry(entry: str, result: dict) -> None:
         result[entry] = ""
 
 
+def _summarize_config(config: Any) -> dict:
+    """Return a lightweight summary of config — keys and scalar values only."""
+    if not isinstance(config, dict):
+        return {}
+    result = {}
+    for k, v in config.items():
+        if isinstance(v, (str, int, float, bool)) or v is None:
+            result[k] = v
+        elif isinstance(v, dict):
+            result[k] = f"{{{len(v)} keys}}"
+        elif isinstance(v, (list, tuple)):
+            result[k] = f"[{len(v)} items]"
+        else:
+            result[k] = str(v)[:50]
+    return result
+
+
 def _serialize_value(value: Any) -> Any:
     if isinstance(value, (str, int, float, bool)) or value is None:
         return value
@@ -319,7 +352,7 @@ def _serialize_value(value: Any) -> Any:
         return [_serialize_value(v) for v in value]
     if isinstance(value, (list, tuple)):
         return f"[{len(value)} items]"
-    return str(value)
+    return str(value)[:100]
 
 
 def _safe_serialize(obj: Any) -> Any:

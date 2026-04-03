@@ -55,9 +55,9 @@ def run_server(
 
     if state:
         load_bigraph(state, schema)
-    elif "ecoli_wcm" in sessions.examples:
+    elif "cell_environment" in sessions.examples:
         # Default to ecoli_state if no state provided
-        ex = sessions.examples["ecoli_wcm"]
+        ex = sessions.examples["cell_environment"]
         load_bigraph(ex.state, ex.schema)
 
     if open_browser:

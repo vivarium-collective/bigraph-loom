@@ -395,6 +395,13 @@ body {
 }
 
 .wire-btn:hover { background: #059669 !important; }
+.wire-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+.add-port-row {
+  margin-top: 4px;
+  padding-top: 4px;
+  border-top: 1px dashed #e2e8f0;
+}
 
 .inspector-panel h4 {
   font-size: 12px;
