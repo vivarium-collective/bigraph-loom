@@ -248,7 +248,7 @@ No Dockerfile needed — the app is pure static HTML/JS/CSS.
 
 --- 
 
-### WP7 — Testing
+### WP7 — Testing ✅
 
 | Scope | Method |
 |---|---|
