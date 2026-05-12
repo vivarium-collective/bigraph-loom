@@ -4,6 +4,7 @@ export interface StoreNodeData {
   value?: string | number | boolean | null;
   valueType?: string;
   isGroup?: boolean;
+  implicit?: boolean;
   path: string[];
 }
 
@@ -17,6 +18,10 @@ export interface ProcessNodeData {
   path: string[];
   inputPorts: string[];
   outputPorts: string[];
+  inputPortsSchema?: Record<string, string>;
+  outputPortsSchema?: Record<string, string>;
+  inputWires?: Record<string, string>;
+  outputWires?: Record<string, string>;
 }
 
 export type BigraphNodeData = StoreNodeData | ProcessNodeData;
