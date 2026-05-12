@@ -1,23 +1,19 @@
-import { useState, useEffect } from "react";
-
-const BASE = "/api";
+import { useState } from "react";
 
 interface Props {
   storePaths: string[][];
-  onUpdate: () => void;
+  onAddStore: (path: string[], value: unknown) => void;
+  onAddProcess: (path: string[], data: {
+    address: string;
+    process_type?: string;
+    config?: Record<string, unknown>;
+    inputs?: Record<string, string[]>;
+    outputs?: Record<string, string[]>;
+  }) => void;
 }
 
-interface RegistryEntry {
-  name: string;
-  address: string;
-  inputs: Record<string, unknown>;
-  outputs: Record<string, unknown>;
-}
-
-export default function EditPanel({ storePaths, onUpdate }: Props) {
+export default function EditPanel({ storePaths, onAddStore, onAddProcess }: Props) {
   const [mode, setMode] = useState<"store" | "registry" | "custom">("store");
-  const [registry, setRegistry] = useState<RegistryEntry[]>([]);
-  const [selectedProcess, setSelectedProcess] = useState<RegistryEntry | null>(null);
 
   // Store form
   const [storeName, setStoreName] = useState("");
@@ -25,7 +21,7 @@ export default function EditPanel({ storePaths, onUpdate }: Props) {
   const [storeValue, setStoreValue] = useState("");
   const [storeIsGroup, setStoreIsGroup] = useState(false);
 
-  // Registry process form
+  // Registry process form (placeholder — WP4 adds registry palette)
   const [regName, setRegName] = useState("");
   const [regParent, setRegParent] = useState("");
   const [regInputs, setRegInputs] = useState<Record<string, string>>({});
@@ -40,27 +36,9 @@ export default function EditPanel({ storePaths, onUpdate }: Props) {
   const [customOutputPorts, setCustomOutputPorts] = useState("");
   const [customConfig, setCustomConfig] = useState("{}");
 
-  useEffect(() => {
-    fetch(`${BASE}/registry`)
-      .then((r) => r.json())
-      .then((d) => setRegistry(d.processes ?? []))
-      .catch(() => {});
-  }, []);
-
   const pathOptions = storePaths.map((p) => p.join("/"));
 
-  function selectProcess(entry: RegistryEntry) {
-    setSelectedProcess(entry);
-    setRegName(entry.name.toLowerCase().replace(/\s+/g, "_"));
-    const wi: Record<string, string> = {};
-    for (const port of Object.keys(entry.inputs)) wi[port] = "";
-    setRegInputs(wi);
-    const wo: Record<string, string> = {};
-    for (const port of Object.keys(entry.outputs)) wo[port] = "";
-    setRegOutputs(wo);
-  }
-
-  async function handleAddStore() {
+  function handleAddStore() {
     if (!storeName) return;
     const path = storeParent ? [...storeParent.split("/"), storeName] : [storeName];
     let value: unknown = storeIsGroup ? {} : storeValue;
@@ -70,18 +48,13 @@ export default function EditPanel({ storePaths, onUpdate }: Props) {
       else if (storeValue === "true") value = true;
       else if (storeValue === "false") value = false;
     }
-    await fetch(`${BASE}/store`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ path, value }),
-    });
-    onUpdate();
+    onAddStore(path, value);
     setStoreName("");
     setStoreValue("");
   }
 
-  async function handleAddRegistryProcess() {
-    if (!selectedProcess || !regName) return;
+  function handleAddRegistryProcess() {
+    if (!regName) return;
     const path = regParent ? [...regParent.split("/"), regName] : [regName];
     const inputs: Record<string, string[]> = {};
     for (const [port, wire] of Object.entries(regInputs)) {
@@ -91,23 +64,18 @@ export default function EditPanel({ storePaths, onUpdate }: Props) {
     for (const [port, wire] of Object.entries(regOutputs)) {
       outputs[port] = wire ? wire.split("/") : [];
     }
-    await fetch(`${BASE}/process`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        path,
-        process_type: "process",
-        address: selectedProcess.address,
-        inputs,
-        outputs,
-      }),
+    onAddProcess(path, {
+      process_type: "process",
+      address: "local:custom",
+      inputs,
+      outputs,
     });
-    onUpdate();
-    setSelectedProcess(null);
     setRegName("");
+    setRegInputs({});
+    setRegOutputs({});
   }
 
-  async function handleAddCustomProcess() {
+  function handleAddCustomProcess() {
     if (!customName) return;
     const path = customParent ? [...customParent.split("/"), customName] : [customName];
     const inputs: Record<string, string[]> = {};
@@ -120,19 +88,13 @@ export default function EditPanel({ storePaths, onUpdate }: Props) {
     }
     let config: Record<string, unknown> = {};
     try { config = JSON.parse(customConfig); } catch { /* keep empty */ }
-    await fetch(`${BASE}/process`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        path,
-        process_type: customType,
-        address: customAddress || `local:${customName}`,
-        config,
-        inputs,
-        outputs,
-      }),
+    onAddProcess(path, {
+      process_type: customType,
+      address: customAddress || `local:${customName}`,
+      config,
+      inputs,
+      outputs,
     });
-    onUpdate();
     setCustomName("");
     setCustomAddress("");
     setCustomInputPorts("");
@@ -179,69 +141,11 @@ export default function EditPanel({ storePaths, onUpdate }: Props) {
         )}
 
         {mode === "registry" && (
-          <>
-            <div className="registry-list">
-              {registry.map((entry) => (
-                <div
-                  key={entry.name}
-                  className={`registry-item ${selectedProcess?.name === entry.name ? "selected" : ""}`}
-                  onClick={() => selectProcess(entry)}
-                >
-                  <span className="registry-item-name">{entry.name}</span>
-                  <span className="registry-item-ports">
-                    {Object.keys(entry.inputs).length}in/{Object.keys(entry.outputs).length}out
-                  </span>
-                </div>
-              ))}
-              {registry.length === 0 && <div className="registry-empty">No processes in Core</div>}
+          <div className="registry-list">
+            <div className="registry-empty">
+              Registry palette will be available in a future update (WP4)
             </div>
-            {selectedProcess && (
-              <div className="edit-wire-form">
-                <div className="edit-field">
-                  <label>Name</label>
-                  <input value={regName} onChange={(e) => setRegName(e.target.value)} />
-                </div>
-                <div className="edit-field">
-                  <label>Parent</label>
-                  <select value={regParent} onChange={(e) => setRegParent(e.target.value)}>
-                    <option value="">root</option>
-                    {pathOptions.map((p) => <option key={p} value={p}>{p}</option>)}
-                  </select>
-                </div>
-                {Object.keys(selectedProcess.inputs).length > 0 && (
-                  <>
-                    <h4>Wire Inputs</h4>
-                    {Object.entries(selectedProcess.inputs).map(([port, type]) => (
-                      <div className="edit-field" key={port}>
-                        <label>{port} <code>{String(type)}</code></label>
-                        <input
-                          placeholder="target/path"
-                          value={regInputs[port] || ""}
-                          onChange={(e) => setRegInputs({ ...regInputs, [port]: e.target.value })}
-                        />
-                      </div>
-                    ))}
-                  </>
-                )}
-                {Object.keys(selectedProcess.outputs).length > 0 && (
-                  <>
-                    <h4>Wire Outputs</h4>
-                    {Object.entries(selectedProcess.outputs).map(([port, type]) => (
-                      <div className="edit-field" key={port}>
-                        <label>{port} <code>{String(type)}</code></label>
-                        <input
-                          placeholder="target/path"
-                          value={regOutputs[port] || ""}
-                          onChange={(e) => setRegOutputs({ ...regOutputs, [port]: e.target.value })}
-                        />
-                      </div>
-                    ))}
-                  </>
-                )}
-                <button className="edit-submit" onClick={handleAddRegistryProcess} disabled={!regName}>Add Process</button>
-              </div>
-            )}
-          </>
+          </div>
         )}
 
         {mode === "custom" && (

@@ -22,14 +22,17 @@ import LibraryPanel from "./panels/LibraryPanel";
 import ProcessListPanel from "./panels/ProcessListPanel";
 import EditPanel from "./panels/EditPanel";
 import {
-  fetchGraph,
   exportPbg,
-  importPbgFile,
-  rewirePort,
+  parsePbgFile,
+  getInState,
+  setInState,
+  deleteInState,
+  loadLibraryEntryState,
   type ViewState,
   type ImportWarning,
-  type GraphResponse,
+  type AnyDict,
 } from "./api";
+import { bigraphToFlow, type FlowNodeData } from "./convert";
 import { applyLayout, applyCompactLayout } from "./layout";
 import "./App.css";
 
@@ -39,7 +42,18 @@ const nodeTypes = { store: StoreNode, process: ProcessNode };
 
 type SidePanel = "inspect" | "json" | "library" | "processes" | "edit";
 
+const DEFAULT_STATE: AnyDict = {};
+
+const STORAGE_KEY = "bgloom_current_state";
+
 function AppInner() {
+  const [pbgState, setPbgState] = useState<AnyDict>(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY);
+      if (saved) return JSON.parse(saved) as AnyDict;
+    } catch { /* ignore */ }
+    return DEFAULT_STATE;
+  });
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
   const [selectedNode, setSelectedNode] = useState<Node | null>(null);
@@ -49,7 +63,6 @@ function AppInner() {
   const [importWarnings, setImportWarnings] = useState<ImportWarning[]>([]);
   const [sidebarWidth, setSidebarWidth] = useState(320);
 
-  const cachedGraph = useRef<GraphResponse | null>(null);
   const cachedLayout = useRef<{ nodes: Node[]; edges: Edge[] } | null>(null);
   const pendingViewState = useRef<ViewState | null>(null);
   const selectedNodeRef = useRef<Node | null>(null);
@@ -60,18 +73,22 @@ function AppInner() {
 
   const reactFlow = useReactFlow();
 
-  // ── Build parent→children map from place edges (stable across filters) ──
   const placeChildrenRef = useRef(new Map<string, string[]>());
 
-  // ── Fetch graph data ──────────────────────────────────────────────────
-  const fetchData = useCallback(async () => {
-    const data = await fetchGraph();
-    cachedGraph.current = data;
-    cachedLayout.current = null;
+  // Persist state to localStorage
+  useEffect(() => {
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(pbgState));
+    } catch { /* ignore */ }
+  }, [pbgState]);
 
-    // Build place-children map once
+  // Convert state -> flow nodes/edges
+  const flowResult = useMemo(() => bigraphToFlow(pbgState), [pbgState]);
+
+  // Build place-children map
+  useEffect(() => {
     const map = new Map<string, string[]>();
-    for (const e of data.edges) {
+    for (const e of flowResult.edges) {
       if (e.data?.edgeType === "place") {
         const list = map.get(e.source) ?? [];
         list.push(e.target);
@@ -79,21 +96,11 @@ function AppInner() {
       }
     }
     placeChildrenRef.current = map;
+  }, [flowResult.edges]);
 
-    return data;
-  }, []);
-
-  // ── Compute layout (only on visible nodes) ─────────────────────────────
+  // Compute layout
   const computeLayout = useCallback(
-    (data: GraphResponse): { nodes: Node[]; edges: Edge[] } => {
-      if (cachedLayout.current && cachedLayout.current.nodes.length > 0) {
-        return cachedLayout.current;
-      }
-
-      const allNodes = data.nodes as unknown as Node[];
-      const allEdges = data.edges as unknown as Edge[];
-
-      // Pre-filter by pending view state collapse/hidden BEFORE layout
+    (allNodes: Node<FlowNodeData>[], allEdges: Edge[]): { nodes: Node[]; edges: Edge[] } => {
       const vs = pendingViewState.current;
       let nodesToLayout = allNodes;
       let edgesToLayout = allEdges;
@@ -103,7 +110,6 @@ function AppInner() {
         const hiddenSet = new Set(vs.hidden ?? []);
 
         if (collapsedSet.size > 0 || hiddenSet.size > 0) {
-          // Build place-children map for descendant calculation
           const placeChildren = new Map<string, string[]>();
           for (const e of allEdges) {
             if ((e.data as any)?.edgeType === "place") {
@@ -141,7 +147,6 @@ function AppInner() {
 
       let laid = applyLayout(nodesToLayout, edgesToLayout);
 
-      // Restore saved positions if available
       if (vs?.positions && Object.keys(vs.positions).length > 0) {
         laid = laid.map((n) => {
           const copy = { ...n };
@@ -159,16 +164,22 @@ function AppInner() {
         pendingViewState.current = null;
       }
 
-      // Cache ALL nodes (not just visible) so expand works, but with layout positions applied
       const laidIds = new Map(laid.map((n) => [n.id, n]));
       const fullNodes = allNodes.map((n) => laidIds.get(n.id) ?? n);
-      cachedLayout.current = { nodes: fullNodes, edges: allEdges };
-      return cachedLayout.current;
+      return { nodes: fullNodes, edges: allEdges };
     },
     [reactFlow]
   );
 
-  // ── Get all descendants of a set of node IDs ──────────────────────────
+  // Sync flow results to React Flow state
+  useEffect(() => {
+    cachedLayout.current = null;
+    const { nodes: flowNodes, edges: flowEdges } = flowResult;
+    const { nodes: laid, edges: allEdges } = computeLayout(flowNodes, flowEdges);
+    cachedLayout.current = { nodes: laid, edges: allEdges };
+    applyFilter(laid, allEdges);
+  }, [flowResult]);
+
   const getDescendants = useCallback((ids: Iterable<string>): Set<string> => {
     const desc = new Set<string>();
     const queue = [...ids];
@@ -184,13 +195,11 @@ function AppInner() {
     return desc;
   }, []);
 
-  // ── Apply visibility filter (no re-fetch, no re-layout) ──────────────
   const applyFilter = useCallback(
     (allNodes: Node[], allEdges: Edge[]) => {
       const currentCollapsed = collapsedRef.current;
       const currentHidden = hiddenRef.current;
 
-      // Expand hidden set to include all descendants of hidden nodes
       const hiddenWithDescendants = new Set(currentHidden);
       for (const id of currentHidden) {
         for (const desc of getDescendants([id])) {
@@ -198,7 +207,6 @@ function AppInner() {
         }
       }
 
-      // Expand collapsed set to hide all descendants
       const collapsedDescendants = getDescendants(currentCollapsed);
 
       let visibleNodes = allNodes.filter(
@@ -210,7 +218,6 @@ function AppInner() {
         (e) => visibleIds.has(e.source) && visibleIds.has(e.target)
       );
 
-      // For large graphs, always show place edges but limit wire edges
       const placeEdges = visibleEdges.filter((e) => (e.data as any)?.edgeType === "place");
       const wireEdges = visibleEdges.filter((e) => (e.data as any)?.edgeType !== "place");
       const WIRE_LIMIT = 200;
@@ -234,26 +241,12 @@ function AppInner() {
     [setNodes, setEdges, getDescendants]
   );
 
-  // ── Full reload ───────────────────────────────────────────────────────
-  const loadGraph = useCallback(async () => {
-    try {
-      const data = await fetchData();
-      const { nodes: laid, edges: allEdges } = computeLayout(data);
-      applyFilter(laid, allEdges);
-    } catch (err) {
-      console.error("Failed to load graph:", err);
-    }
-  }, [fetchData, computeLayout, applyFilter]);
-
-  useEffect(() => { loadGraph(); }, [loadGraph]);
-
-  // Re-filter when collapsed/hidden change. Layout newly visible nodes.
+  // Re-filter when collapsed/hidden change
   useEffect(() => {
     if (!cachedLayout.current) return;
     const allNodes = cachedLayout.current.nodes;
     const allEdges = cachedLayout.current.edges;
 
-    // Find which nodes will become visible after filtering
     const currentCollapsed = collapsedRef.current;
     const currentHidden = hiddenRef.current;
 
@@ -266,7 +259,6 @@ function AppInner() {
 
     const visibleNodes = allNodes.filter((n) => !excludeIds.has(n.id));
 
-    // Check if any visible nodes have (0,0) position (never laid out)
     const needsLayout = visibleNodes.some(
       (n) => n.position.x === 0 && n.position.y === 0
     );
@@ -278,7 +270,6 @@ function AppInner() {
       );
       const laid = applyLayout(visibleNodes, visibleEdges);
 
-      // Merge laid-out positions back into cache
       const laidMap = new Map(laid.map((n) => [n.id, n]));
       cachedLayout.current.nodes = allNodes.map((n) => laidMap.get(n.id) ?? n);
     }
@@ -286,7 +277,6 @@ function AppInner() {
     applyFilter(cachedLayout.current.nodes, cachedLayout.current.edges);
   }, [collapsed, hiddenNodes, applyFilter, getDescendants]);
 
-  // ── Sync positions to cache ───────────────────────────────────────────
   const syncPositionsToCache = useCallback(() => {
     if (!cachedLayout.current) return;
     const currentNodes = reactFlow.getNodes();
@@ -297,7 +287,89 @@ function AppInner() {
     });
   }, [reactFlow]);
 
-  // ── View state ────────────────────────────────────────────────────────
+  // ── State mutation helpers ────────────────────────────────────────────────
+
+  const mutateState = useCallback((fn: (prev: AnyDict) => AnyDict) => {
+    setPbgState((prev) => fn(prev));
+  }, []);
+
+  const handleAddStore = useCallback((path: string[], value: unknown) => {
+    mutateState((prev) => setInState(prev, path, value));
+  }, [mutateState]);
+
+  const handleAddProcess = useCallback(
+    (path: string[], data: {
+      address: string;
+      process_type?: string;
+      config?: Record<string, unknown>;
+      inputs?: Record<string, string[]>;
+      outputs?: Record<string, string[]>;
+    }) => {
+      mutateState((prev) => {
+        const process: AnyDict = {
+          _type: data.process_type ?? "process",
+          address: data.address,
+          config: data.config ?? {},
+          inputs: data.inputs ?? {},
+          outputs: data.outputs ?? {},
+        };
+        return setInState(prev, path, process);
+      });
+    },
+    [mutateState]
+  );
+
+  const handleUpdateNodeValue = useCallback((path: string[], value: unknown) => {
+    mutateState((prev) => setInState(prev, path, value));
+  }, [mutateState]);
+
+  const handleUpdateNodeConfig = useCallback((path: string[], config: Record<string, unknown>) => {
+    mutateState((prev) => {
+      const current = getInState(prev, path);
+      if (typeof current !== "object" || current === null) return prev;
+      const updated = { ...(current as AnyDict), config };
+      return setInState(prev, path, updated);
+    });
+  }, [mutateState]);
+
+  const handleDeleteNode = useCallback((path: string[]) => {
+    mutateState((prev) => deleteInState(prev, path));
+  }, [mutateState]);
+
+  const handleRewirePort = useCallback(
+    (processPath: string[], portName: string, direction: "inputs" | "outputs", newTarget: string[]) => {
+      mutateState((prev) => {
+        const proc = getInState(prev, processPath) as AnyDict | undefined;
+        if (!proc || typeof proc !== "object") return prev;
+        const ports = { ...(proc[direction] as AnyDict ?? {}) };
+        ports[portName] = newTarget;
+        const updated = { ...proc, [direction]: ports };
+        return setInState(prev, processPath, updated);
+      });
+    },
+    [mutateState]
+  );
+
+  const handleNestNode = useCallback((sourcePath: string[], targetParent: string[]) => {
+    mutateState((prev) => {
+      // Move source node into target parent
+      const source = getInState(prev, sourcePath);
+      if (source === undefined) return prev;
+      let state = deleteInState(prev, sourcePath);
+      state = setInState(state, [...targetParent, ...sourcePath.slice(-1)], source);
+      return state;
+    });
+  }, [mutateState]);
+
+  const handleApplyState = useCallback((state: AnyDict) => {
+    setPbgState(state);
+    setCollapsed(new Set());
+    setHiddenNodes(new Set());
+    cachedLayout.current = null;
+  }, []);
+
+  // ── View state ────────────────────────────────────────────────────────────
+
   const getViewState = useCallback((): ViewState => {
     const positions: Record<string, { x: number; y: number }> = {};
     const styles: Record<string, Record<string, unknown>> = {};
@@ -322,14 +394,14 @@ function AppInner() {
     const newHidden = new Set(vs.hidden ?? []);
     setCollapsed(newCollapsed);
     setHiddenNodes(newHidden);
-    // Update refs immediately so loadGraph uses correct values
     collapsedRef.current = newCollapsed;
     hiddenRef.current = newHidden;
     pendingViewState.current = vs;
     cachedLayout.current = null;
   }, []);
 
-  // ── Collapse/expand/compact ───────────────────────────────────────────
+  // ── Collapse/expand/compact ───────────────────────────────────────────────
+
   const allGroupIds = useMemo(() => {
     if (!cachedLayout.current) return new Set<string>();
     return new Set(
@@ -351,16 +423,13 @@ function AppInner() {
   const handleExpandAll = useCallback(() => {
     setCollapsed(new Set());
     setHiddenNodes(new Set());
-    // Re-layout so newly revealed nodes get proper positions
-    if (cachedGraph.current) {
-      cachedLayout.current = null; // force re-layout
-      const data = cachedGraph.current;
-      const allNodes = data.nodes as unknown as Node[];
-      const allEdges = data.edges as unknown as Edge[];
-      const laid = applyLayout(allNodes, allEdges);
+    if (cachedLayout.current) {
+      cachedLayout.current = null;
+      const { nodes: flowNodes, edges: flowEdges } = flowResult;
+      const { nodes: laid, edges: allEdges } = computeLayout(flowNodes, flowEdges);
       cachedLayout.current = { nodes: laid, edges: allEdges };
     }
-  }, []);
+  }, [flowResult, computeLayout]);
 
   const handleCompact = useCallback(() => {
     setNodes((current) => applyCompactLayout(current));
@@ -371,7 +440,6 @@ function AppInner() {
   }, [setNodes, reactFlow, syncPositionsToCache]);
 
   const handleHierarchical = useCallback(() => {
-    // Re-run dagre tree layout using place edges (outers above inners)
     if (!cachedLayout.current) return;
     const allEdges = cachedLayout.current.edges;
     setNodes((current) => applyLayout(current, allEdges));
@@ -381,7 +449,8 @@ function AppInner() {
     }, 50);
   }, [setNodes, reactFlow, syncPositionsToCache]);
 
-  // ── Selection ─────────────────────────────────────────────────────────
+  // ── Selection ─────────────────────────────────────────────────────────────
+
   const onSelectionChange = useCallback(
     ({ nodes: sel }: OnSelectionChangeParams) => {
       const selected = sel.length === 1 ? sel[0] : null;
@@ -389,7 +458,6 @@ function AppInner() {
       selectedNodeRef.current = selected;
       if (selected) setSidePanel("inspect");
 
-      // Update edges only (for large-graph edge filtering)
       if (cachedLayout.current) {
         const currentHidden = hiddenRef.current;
         const visibleNodeIds = new Set(reactFlow.getNodes().map((n) => n.id));
@@ -434,9 +502,10 @@ function AppInner() {
     syncPositionsToCache();
   }, [syncPositionsToCache]);
 
-  // ── Connect (drag between nodes) ───────────────────────────────────────
+  // ── Connect (drag between nodes) ──────────────────────────────────────────
+
   const onConnect = useCallback(
-    async (connection: Connection) => {
+    (connection: Connection) => {
       const sourceNode = cachedLayout.current?.nodes.find((n) => n.id === connection.source);
       const targetNode = cachedLayout.current?.nodes.find((n) => n.id === connection.target);
       if (!sourceNode || !targetNode) return;
@@ -444,52 +513,19 @@ function AppInner() {
       const srcData = sourceNode.data as any;
       const tgtData = targetNode.data as any;
 
-      try {
-        if (srcData.nodeType === "process" && connection.sourceHandle) {
-          // Process output port → store: rewire output
-          await rewirePort({
-            process_path: srcData.path,
-            port_name: connection.sourceHandle,
-            direction: "outputs",
-            new_target: tgtData.path,
-          });
-        } else if (tgtData.nodeType === "process" && connection.targetHandle) {
-          // Store → process input port: rewire input
-          await rewirePort({
-            process_path: tgtData.path,
-            port_name: connection.targetHandle,
-            direction: "inputs",
-            new_target: srcData.path,
-          });
-        } else if (srcData.nodeType === "store" && tgtData.nodeType === "store") {
-          // Store-to-store: the node you drag FROM becomes the parent (outer)
-          // The node you drop ON becomes the child (inner)
-          const parentPath = srcData.path;
-          const childPath = tgtData.path;
-          console.log(`Nesting ${childPath.join("/")} into ${parentPath.join("/")}`);
-          const res = await fetch("/api/nest", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              source_path: childPath,
-              target_parent: parentPath,
-            }),
-          });
-          if (!res.ok) {
-            const err = await res.json().catch(() => ({}));
-            console.error("Nest failed:", err.detail || res.status);
-            return;
-          }
-        }
-        loadGraph();
-      } catch (err: any) {
-        console.error("Connect failed:", err.message);
+      if (srcData.nodeType === "process" && connection.sourceHandle) {
+        handleRewirePort(srcData.path, connection.sourceHandle, "outputs", tgtData.path);
+      } else if (tgtData.nodeType === "process" && connection.targetHandle) {
+        handleRewirePort(tgtData.path, connection.targetHandle, "inputs", srcData.path);
+      } else if (srcData.nodeType === "store" && tgtData.nodeType === "store") {
+        handleNestNode(tgtData.path, srcData.path);
       }
     },
-    [loadGraph]
+    [handleRewirePort, handleNestNode]
   );
 
-  // ── Process toggle ────────────────────────────────────────────────────
+  // ── Process toggle ────────────────────────────────────────────────────────
+
   const handleToggleProcess = useCallback((nodeId: string) => {
     setHiddenNodes((prev) => {
       const next = new Set(prev);
@@ -519,17 +555,14 @@ function AppInner() {
     setHiddenNodes((prev) => new Set(prev).add(nodeId));
   }, []);
 
-  const handleNew = useCallback(async () => {
-    // Load an empty bigraph
-    await fetch("/api/load", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ state: {} }),
-    });
+  // ── New / Import / Export ─────────────────────────────────────────────────
+
+  const handleNew = useCallback(() => {
+    setPbgState({});
     setCollapsed(new Set());
     setHiddenNodes(new Set());
-    loadGraph();
-  }, [loadGraph]);
+    cachedLayout.current = null;
+  }, []);
 
   const handleImport = useCallback(() => {
     const input = document.createElement("input");
@@ -539,18 +572,40 @@ function AppInner() {
       const file = (e.target as HTMLInputElement).files?.[0];
       if (!file) return;
       try {
-        const result = await importPbgFile(file);
-        setImportWarnings(result.warnings ?? []);
-        if (result.warnings?.length) setTimeout(() => setImportWarnings([]), 15000);
+        const parsed = await parsePbgFile(file);
+        if (parsed.view_state) {
+          restoreViewState(parsed.view_state);
+        }
+        setPbgState(parsed.state);
         setCollapsed(new Set());
         setHiddenNodes(new Set());
-        loadGraph();
+        cachedLayout.current = null;
       } catch (err: any) {
         console.error("Import failed:", err.message);
       }
     };
     input.click();
-  }, [loadGraph]);
+  }, [restoreViewState]);
+
+  const handleExport = useCallback(() => {
+    exportPbg(pbgState, null, getViewState());
+  }, [pbgState, getViewState]);
+
+  // ── Library ───────────────────────────────────────────────────────────────
+
+  const handleLibraryLoad = useCallback((name: string) => {
+    const state = loadLibraryEntryState(name);
+    if (state) {
+      setPbgState(state);
+      setCollapsed(new Set());
+      setHiddenNodes(new Set());
+      cachedLayout.current = null;
+      return { ok: true, warnings: [] as ImportWarning[], view_state: null as ViewState | null };
+    }
+    return { ok: false, warnings: [] as ImportWarning[], view_state: null as ViewState | null };
+  }, []);
+
+  // ── Panels computed props ─────────────────────────────────────────────────
 
   const groupNodes = useMemo(() =>
     nodes.filter((n) => (n.data as any)?.isGroup), [nodes]);
@@ -591,7 +646,7 @@ function AppInner() {
           <span className="header-sep" />
           <button className="header-btn" onClick={handleNew}>New</button>
           <button className="header-btn" onClick={handleImport}>Import</button>
-          <button className="header-btn" onClick={() => exportPbg(getViewState())}>Export</button>
+          <button className="header-btn" onClick={handleExport}>Export</button>
           <span className="header-sep" />
           <div className="panel-tabs">
             <button
@@ -651,14 +706,21 @@ function AppInner() {
           {sidePanel === "inspect" ? (
             <InspectorPanel
               node={selectedNode}
-              onUpdate={loadGraph}
               onHide={handleHideNode}
               groupNodes={groupNodes}
               allStoreNodes={allStoreNodes}
+              onUpdateNodeValue={handleUpdateNodeValue}
+              onUpdateNodeConfig={handleUpdateNodeConfig}
+              onDeleteNode={handleDeleteNode}
+              onRewirePort={handleRewirePort}
+              onNestNode={handleNestNode}
             />
           ) : sidePanel === "json" ? (
             <Suspense fallback={<div style={{padding:16,color:"#94a3b8"}}>Loading editor...</div>}>
-              <JsonPanel onUpdate={loadGraph} />
+              <JsonPanel
+                pbgState={pbgState}
+                onApplyState={handleApplyState}
+              />
             </Suspense>
           ) : sidePanel === "processes" ? (
             <ProcessListPanel
@@ -669,16 +731,21 @@ function AppInner() {
               onShowAll={handleShowAllProcesses}
             />
           ) : sidePanel === "edit" ? (
-            <EditPanel storePaths={storePaths} onUpdate={loadGraph} />
+            <EditPanel
+              storePaths={storePaths}
+              onAddStore={handleAddStore}
+              onAddProcess={handleAddProcess}
+            />
           ) : (
             <LibraryPanel
-              onUpdate={loadGraph}
               onWarnings={(w) => {
                 setImportWarnings(w);
                 if (w.length) setTimeout(() => setImportWarnings([]), 15000);
               }}
               getViewState={getViewState}
               restoreViewState={restoreViewState}
+              pbgState={pbgState}
+              onLibraryLoad={handleLibraryLoad}
             />
           )}
         </div>

@@ -1,21 +1,22 @@
 import { useState, useEffect } from "react";
 import type { Node } from "@xyflow/react";
 import type { BigraphNodeData } from "../types";
-import { updateNodeValue, updateNodeConfig, deleteNode, fetchProcessSource, rewirePort, type ProcessInfo } from "../api";
 
 interface Props {
   node: Node | null;
-  onUpdate: () => void;
   onHide: (nodeId: string) => void;
   groupNodes: Node[];
   allStoreNodes?: Node[];
+  onUpdateNodeValue: (path: string[], value: unknown) => void;
+  onUpdateNodeConfig: (path: string[], config: Record<string, unknown>) => void;
+  onDeleteNode: (path: string[]) => void;
+  onRewirePort: (processPath: string[], portName: string, direction: "inputs" | "outputs", newTarget: string[]) => void;
+  onNestNode: (sourcePath: string[], targetParent: string[]) => void;
 }
 
-export default function InspectorPanel({ node, onUpdate, onHide, groupNodes }: Props) {
+export default function InspectorPanel({ node, onHide, groupNodes, onUpdateNodeValue, onUpdateNodeConfig, onDeleteNode, onRewirePort, onNestNode }: Props) {
   const [editValue, setEditValue] = useState("");
   const [configEdits, setConfigEdits] = useState<Record<string, string>>({});
-  const [processInfo, setProcessInfo] = useState<ProcessInfo | null>(null);
-  const [showUpdateSource, setShowUpdateSource] = useState(false);
   const [wireEdits, setWireEdits] = useState<Record<string, string>>({});
   const [nestTarget, setNestTarget] = useState("");
 
@@ -41,17 +42,7 @@ export default function InspectorPanel({ node, onUpdate, onHide, groupNodes }: P
         wires[`out:${p}`] = ow[p] ?? "";
       }
       setWireEdits(wires);
-
-      const address = (data as any).address;
-      if (address) {
-        fetchProcessSource(address).then(setProcessInfo).catch(() => setProcessInfo(null));
-      } else {
-        setProcessInfo(null);
-      }
-    } else {
-      setProcessInfo(null);
     }
-    setShowUpdateSource(false);
     setNestTarget("");
   }, [node?.id]);
 
@@ -66,17 +57,16 @@ export default function InspectorPanel({ node, onUpdate, onHide, groupNodes }: P
 
   const path = data.path;
 
-  async function handleValueSave() {
+  function handleValueSave() {
     let parsed: unknown = editValue;
     const num = Number(editValue);
     if (!isNaN(num) && editValue.trim() !== "") parsed = num;
     else if (editValue === "true") parsed = true;
     else if (editValue === "false") parsed = false;
-    await updateNodeValue(path, parsed);
-    onUpdate();
+    onUpdateNodeValue(path, parsed);
   }
 
-  async function handleConfigSave() {
+  function handleConfigSave() {
     const config: Record<string, unknown> = {};
     for (const [k, v] of Object.entries(configEdits)) {
       const num = Number(v);
@@ -85,31 +75,27 @@ export default function InspectorPanel({ node, onUpdate, onHide, groupNodes }: P
       else if (v === "false") config[k] = false;
       else config[k] = v;
     }
-    await updateNodeConfig(path, config);
-    onUpdate();
+    onUpdateNodeConfig(path, config);
   }
 
-  async function handleRewire(portName: string, direction: "inputs" | "outputs") {
+  function handleRewire(portName: string, direction: "inputs" | "outputs") {
     const key = direction === "inputs" ? `in:${portName}` : `out:${portName}`;
     const target = wireEdits[key]?.trim();
     if (!target) return;
-    await rewirePort({
-      process_path: path,
-      port_name: portName,
-      direction,
-      new_target: target.split("/"),
-    });
-    onUpdate();
+    onRewirePort(path, portName, direction, target.split("/"));
   }
 
-  async function handleDelete() {
+  function handleDelete() {
     if (!confirm(`Delete "${data!.label}" and all its children?`)) return;
-    await deleteNode(path);
-    onUpdate();
+    onDeleteNode(path);
   }
 
-  const inputTypes = processInfo?.inputs ?? {};
-  const outputTypes = processInfo?.outputs ?? {};
+  function handleMove() {
+    if (!nestTarget) return;
+    onNestNode(path, nestTarget.split("/"));
+    setNestTarget("");
+  }
+
   const inputPorts: string[] = (data as any).inputPorts ?? [];
   const outputPorts: string[] = (data as any).outputPorts ?? [];
 
@@ -121,9 +107,6 @@ export default function InspectorPanel({ node, onUpdate, onHide, groupNodes }: P
           <span className="inspector-badge">
             {data.nodeType === "process" ? (data as any).processType : "store"}
           </span>
-          {data.nodeType === "process" && processInfo && !processInfo.registered && (
-            <span className="inspector-badge badge-warning">not registered</span>
-          )}
         </h3>
         <div className="inspector-header-actions">
           <button className="hide-btn" onClick={() => onHide(node.id)}>Hide</button>
@@ -167,38 +150,14 @@ export default function InspectorPanel({ node, onUpdate, onHide, groupNodes }: P
             <code>{(data as any).address || "\u2014"}</code>
           </div>
 
-          {processInfo?.registered && (
-            <div className="source-info">
-              <h4>Source</h4>
-              {processInfo.class && (
-                <div className="inspector-field">
-                  <label>Class</label>
-                  <code>{processInfo.class}</code>
-                </div>
-              )}
-              {processInfo.source_file && (
-                <div className="inspector-field">
-                  <label>File</label>
-                  <code className="source-path" title={processInfo.source_file}>
-                    {processInfo.source_file}{processInfo.source_line ? `:${processInfo.source_line}` : ""}
-                  </code>
-                </div>
-              )}
-            </div>
-          )}
-
           {/* Input Ports */}
           <h4>Input Ports</h4>
           {inputPorts.map((p) => {
             const key = `in:${p}`;
             const currentWire = wireEdits[key] ?? "";
-            const typeStr = inputTypes[p] != null ? String(inputTypes[p]) : null;
             return (
               <div className="wire-field" key={key}>
-                <div className="wire-port-name">
-                  {p}
-                  {typeStr && <code className="port-type">{typeStr}</code>}
-                </div>
+                <div className="wire-port-name">{p}</div>
                 <div className="wire-edit-row">
                   <input
                     className="wire-input"
@@ -218,13 +177,9 @@ export default function InspectorPanel({ node, onUpdate, onHide, groupNodes }: P
           {outputPorts.map((p) => {
             const key = `out:${p}`;
             const currentWire = wireEdits[key] ?? "";
-            const typeStr = outputTypes[p] != null ? String(outputTypes[p]) : null;
             return (
               <div className="wire-field" key={key}>
-                <div className="wire-port-name">
-                  {p}
-                  {typeStr && <code className="port-type">{typeStr}</code>}
-                </div>
+                <div className="wire-port-name">{p}</div>
                 <div className="wire-edit-row">
                   <input
                     className="wire-input"
@@ -255,30 +210,6 @@ export default function InspectorPanel({ node, onUpdate, onHide, groupNodes }: P
               <button onClick={handleConfigSave}>Save Config</button>
             </>
           )}
-
-          {/* Update function */}
-          {processInfo?.update_signature && (
-            <div className="inspector-section">
-              <h4>
-                Update Function
-                {processInfo.update_source && (
-                  <button className="toggle-source-btn" onClick={() => setShowUpdateSource(!showUpdateSource)}>
-                    {showUpdateSource ? "Hide" : "Show"}
-                  </button>
-                )}
-              </h4>
-              <div className="inspector-field">
-                <label>Signature</label>
-                <code className="update-sig">{processInfo.update_signature}</code>
-              </div>
-              {processInfo.update_docstring && (
-                <p className="update-doc">{processInfo.update_docstring}</p>
-              )}
-              {showUpdateSource && processInfo.update_source && (
-                <pre className="update-source">{processInfo.update_source}</pre>
-              )}
-            </div>
-          )}
         </div>
       )}
 
@@ -307,16 +238,7 @@ export default function InspectorPanel({ node, onUpdate, onHide, groupNodes }: P
             <button
               className="wire-btn"
               disabled={!nestTarget}
-              onClick={async () => {
-                if (!nestTarget) return;
-                await fetch("/api/nest", {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({ source_path: path, target_parent: nestTarget.split("/") }),
-                });
-                setNestTarget("");
-                onUpdate();
-              }}
+              onClick={handleMove}
             >Move</button>
           </div>
         </div>

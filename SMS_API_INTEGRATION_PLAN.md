@@ -69,7 +69,7 @@ Make Bigraph Loom a client of the sms-api compose system. Users visually build p
 
 --- 
 
-### WP1 — Standalone Editor Mode
+### WP1 — Standalone Editor Mode ✅
 
 **Goal**: The frontend manages PBG state in browser memory. No calls to `bigraph_loom/api.py`.
 

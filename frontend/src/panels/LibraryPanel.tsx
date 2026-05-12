@@ -4,25 +4,28 @@ import {
   loadFromLibrary,
   saveToLibrary,
   deleteFromLibrary,
+  loadLibraryEntryState,
   type LibraryEntry,
   type ImportWarning,
   type ViewState,
+  type AnyDict,
 } from "../api";
 
 interface Props {
-  onUpdate: () => void;
   onWarnings: (warnings: ImportWarning[]) => void;
   getViewState: () => ViewState;
   restoreViewState: (vs: ViewState) => void;
+  pbgState: AnyDict;
+  onLibraryLoad: (name: string) => { ok: boolean; warnings?: ImportWarning[]; view_state?: ViewState | null };
 }
 
-export default function LibraryPanel({ onUpdate, onWarnings, getViewState, restoreViewState }: Props) {
+export default function LibraryPanel({ onWarnings, getViewState, restoreViewState, pbgState, onLibraryLoad }: Props) {
   const [files, setFiles] = useState<LibraryEntry[]>([]);
   const [saveName, setSaveName] = useState("");
   const [status, setStatus] = useState<string | null>(null);
 
-  const refresh = useCallback(async () => {
-    const entries = await fetchLibrary();
+  const refresh = useCallback(() => {
+    const entries = fetchLibrary();
     setFiles(entries);
   }, []);
 
@@ -30,46 +33,37 @@ export default function LibraryPanel({ onUpdate, onWarnings, getViewState, resto
     refresh();
   }, [refresh]);
 
-  async function handleLoad(name: string) {
-    try {
-      const result = await loadFromLibrary(name);
-      if (result.warnings?.length) {
-        onWarnings(result.warnings);
+  function handleLoad(name: string) {
+    const result = loadFromLibrary(name);
+    if (result.ok) {
+      const state = loadLibraryEntryState(name);
+      if (state) {
+        onLibraryLoad(name);
+        if (result.view_state) {
+          restoreViewState(result.view_state);
+        }
+        setStatus(`Loaded "${name}"`);
+        setTimeout(() => setStatus(null), 3000);
       }
-      // Restore view state if available
-      if (result.view_state) {
-        restoreViewState(result.view_state);
-      }
-      setStatus(`Loaded "${name}"`);
-      setTimeout(() => setStatus(null), 3000);
-      onUpdate();
-    } catch (e: any) {
-      setStatus(`Error: ${e.message}`);
+    } else {
+      setStatus(`Error: Not found "${name}"`);
     }
   }
 
-  async function handleSave() {
+  function handleSave() {
     if (!saveName.trim()) return;
-    try {
-      const viewState = getViewState();
-      await saveToLibrary(saveName.trim(), viewState);
-      setSaveName("");
-      setStatus(`Saved "${saveName.trim()}" with view`);
-      setTimeout(() => setStatus(null), 3000);
-      refresh();
-    } catch (e: any) {
-      setStatus(`Error: ${e.message}`);
-    }
+    const viewState = getViewState();
+    saveToLibrary(saveName.trim(), pbgState, viewState);
+    setSaveName("");
+    setStatus(`Saved "${saveName.trim()}" with view`);
+    setTimeout(() => setStatus(null), 3000);
+    refresh();
   }
 
-  async function handleDelete(name: string) {
+  function handleDelete(name: string) {
     if (!confirm(`Delete saved bigraph "${name}"?`)) return;
-    try {
-      await deleteFromLibrary(name);
-      refresh();
-    } catch (e: any) {
-      setStatus(`Error: ${e.message}`);
-    }
+    deleteFromLibrary(name);
+    refresh();
   }
 
   const examples = files.filter((f) => f.source === "example");
@@ -83,7 +77,6 @@ export default function LibraryPanel({ onUpdate, onWarnings, getViewState, resto
 
       {status && <div className="library-status">{status}</div>}
 
-      {/* Save current with view state */}
       <div className="library-save">
         <input
           value={saveName}
@@ -96,7 +89,6 @@ export default function LibraryPanel({ onUpdate, onWarnings, getViewState, resto
         </button>
       </div>
 
-      {/* Examples */}
       <div className="library-section">
         <h4>Examples</h4>
         {examples.length === 0 && (
@@ -117,7 +109,6 @@ export default function LibraryPanel({ onUpdate, onWarnings, getViewState, resto
         ))}
       </div>
 
-      {/* Saved */}
       <div className="library-section">
         <h4>Saved</h4>
         {saved.length === 0 && (
