@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { SmsApiComposeClient } from "../smsApi";
 import { isProcess, type AnyDict } from "../convert";
 import type { ComposeHpcRun, ComposeJobStatus } from "../types";
+import ResultsViewer from "./ResultsViewer";
 
 // ── History persistence ──────────────────────────────────────────────────────
 
@@ -116,6 +117,7 @@ export default function SimulationPanel({ pbgState }: Props) {
   const [simId, setSimId] = useState<number | null>(null);
   const [elapsed, setElapsed] = useState(0);
   const [history, setHistory] = useState<HistoryEntry[]>(() => loadHistory());
+  const [viewResultId, setViewResultId] = useState<number | null>(null);
 
   const clientRef = useRef(new SmsApiComposeClient(baseUrl));
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -238,6 +240,9 @@ export default function SimulationPanel({ pbgState }: Props) {
 
   return (
     <div className="sim-panel">
+      {viewResultId && (
+        <ResultsViewer simId={viewResultId} onClose={() => setViewResultId(null)} />
+      )}
       <SubmissionModal
         open={showModal}
         baseUrl={baseUrl}
@@ -291,7 +296,12 @@ export default function SimulationPanel({ pbgState }: Props) {
             <span className="sim-id">ID: {simId}</span>
             <div className="sim-actions">
               <button className="btn-sm">Download Results</button>
-              <button className="btn-sm">View Results</button>
+              <button
+                className="btn-sm"
+                onClick={() => setViewResultId(simId!)}
+              >
+                View Results
+              </button>
             </div>
           </div>
         )}
