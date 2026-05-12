@@ -100,7 +100,7 @@ Make Bigraph Loom a client of the sms-api compose system. Users visually build p
 
 --- 
 
-### WP2 — Sms-api Compose Client
+### WP2 — Sms-api Compose Client ✅
 
 **File**: `frontend/src/smsApi.ts` (~150 LOC)
 

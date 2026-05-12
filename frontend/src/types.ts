@@ -1,3 +1,7 @@
+import type { AnyDict } from "./api";
+
+export type { AnyDict };
+
 export interface StoreNodeData {
   label: string;
   nodeType: "store";
@@ -53,4 +57,39 @@ export interface GraphResponse {
     data?: EdgeData;
     style?: Record<string, unknown>;
   }>;
+}
+
+// ── sms-api compose types ────────────────────────────────────────────────────
+
+export interface BiGraphProcess {
+  module: string;
+  name: string;
+  compute_type: "process" | "step";
+  inputs: string;
+  outputs: string;
+  database_id: number;
+}
+
+export interface ComposeSimulationExperiment {
+  simulation_database_id: number;
+  simulator_database_id: number;
+  last_updated?: string;
+  metadata?: Record<string, string>;
+}
+
+export type ComposeJobStatus =
+  | "waiting" | "queued" | "running" | "completed" | "failed"
+  | "pending" | "cancelled" | "out_of_memory" | "suspended" | "timeout" | "unknown";
+
+export interface ComposeHpcRun {
+  database_id: number;
+  slurmjobid: number;
+  correlation_id: string;
+  job_type: "simulation" | "build_container";
+  sim_id: number | null;
+  simulator_id: number | null;
+  status: ComposeJobStatus | null;
+  start_time: string | null;
+  end_time: string | null;
+  error_message: string | null;
 }
