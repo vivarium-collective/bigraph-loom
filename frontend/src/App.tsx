@@ -21,6 +21,7 @@ import InspectorPanel from "./panels/InspectorPanel";
 import LibraryPanel from "./panels/LibraryPanel";
 import ProcessListPanel from "./panels/ProcessListPanel";
 import EditPanel from "./panels/EditPanel";
+import SimulationPanel from "./panels/SimulationPanel";
 import {
   exportPbg,
   parsePbgFile,
@@ -40,7 +41,7 @@ const JsonPanel = lazy(() => import("./panels/JsonPanel"));
 
 const nodeTypes = { store: StoreNode, process: ProcessNode };
 
-type SidePanel = "inspect" | "json" | "library" | "processes" | "edit";
+type SidePanel = "inspect" | "json" | "library" | "processes" | "edit" | "simulation";
 
 const DEFAULT_STATE: AnyDict = {};
 
@@ -648,6 +649,10 @@ function AppInner() {
           <button className="header-btn" onClick={handleImport}>Import</button>
           <button className="header-btn" onClick={handleExport}>Export</button>
           <span className="header-sep" />
+          <button className="header-btn header-btn-run" onClick={() => setSidePanel("simulation")}>
+            Run
+          </button>
+          <span className="header-sep" />
           <div className="panel-tabs">
             <button
               className={sidePanel === "library" ? "panel-tab-active" : ""}
@@ -657,6 +662,10 @@ function AppInner() {
               className={sidePanel === "processes" ? "panel-tab-active" : ""}
               onClick={() => setSidePanel(sidePanel === "processes" ? "inspect" : "processes")}
             >Processes</button>
+            <button
+              className={sidePanel === "simulation" ? "panel-tab-active" : ""}
+              onClick={() => setSidePanel(sidePanel === "simulation" ? "inspect" : "simulation")}
+            >Simulation</button>
             <button
               className={sidePanel === "edit" ? "panel-tab-active" : ""}
               onClick={() => setSidePanel(sidePanel === "edit" ? "inspect" : "edit")}
@@ -736,6 +745,8 @@ function AppInner() {
               onAddStore={handleAddStore}
               onAddProcess={handleAddProcess}
             />
+          ) : sidePanel === "simulation" ? (
+            <SimulationPanel pbgState={pbgState} />
           ) : (
             <LibraryPanel
               onWarnings={(w) => {
