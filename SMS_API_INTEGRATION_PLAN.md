@@ -159,7 +159,7 @@ class SmsApiComposeClient {
 
 --- 
 
-### WP4 — Process Registry Palette
+### WP4 — Process Registry Palette ✅
 
 **Edit panel modification**: Add a "Registry" tab to `EditPanel.tsx`.
 

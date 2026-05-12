@@ -1,4 +1,6 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
+import { SmsApiComposeClient } from "../smsApi";
+import type { BiGraphProcess } from "../types";
 
 interface Props {
   storePaths: string[][];
@@ -12,6 +14,31 @@ interface Props {
   }) => void;
 }
 
+/**
+ * Parse a schema string like "mass:float|volume:int" into key-types.
+ * Used for registry process input/output display.
+ */
+function parseSchemaString(s: string): Record<string, string> {
+  const result: Record<string, string> = {};
+  if (!s) return result;
+  let depth = 0;
+  let current = "";
+  for (const ch of s) {
+    if (ch === "(" || ch === "[") { depth++; current += ch; }
+    else if (ch === ")" || ch === "]") { depth--; current += ch; }
+    else if (ch === "|" && depth === 0) {
+      const parts = current.split(":");
+      if (parts.length >= 2) result[parts[0].trim()] = parts[1].trim();
+      current = "";
+    } else { current += ch; }
+  }
+  if (current.trim()) {
+    const parts = current.split(":");
+    if (parts.length >= 2) result[parts[0].trim()] = parts[1].trim();
+  }
+  return result;
+}
+
 export default function EditPanel({ storePaths, onAddStore, onAddProcess }: Props) {
   const [mode, setMode] = useState<"store" | "registry" | "custom">("store");
 
@@ -21,11 +48,17 @@ export default function EditPanel({ storePaths, onAddStore, onAddProcess }: Prop
   const [storeValue, setStoreValue] = useState("");
   const [storeIsGroup, setStoreIsGroup] = useState(false);
 
-  // Registry process form (placeholder — WP4 adds registry palette)
+  // Registry
+  const [registry, setRegistry] = useState<BiGraphProcess[]>([]);
+  const [registrySearch, setRegistrySearch] = useState("");
+  const [selectedReg, setSelectedReg] = useState<BiGraphProcess | null>(null);
   const [regName, setRegName] = useState("");
   const [regParent, setRegParent] = useState("");
   const [regInputs, setRegInputs] = useState<Record<string, string>>({});
   const [regOutputs, setRegOutputs] = useState<Record<string, string>>({});
+  const clientRef = useRef(new SmsApiComposeClient(
+    localStorage.getItem("smsApiBaseUrl") ?? "https://sms.cam.uchc.edu",
+  ));
 
   // Custom process form
   const [customName, setCustomName] = useState("");
@@ -36,7 +69,26 @@ export default function EditPanel({ storePaths, onAddStore, onAddProcess }: Prop
   const [customOutputPorts, setCustomOutputPorts] = useState("");
   const [customConfig, setCustomConfig] = useState("{}");
 
+  useEffect(() => {
+    clientRef.current.listProcesses()
+      .then(setRegistry)
+      .catch(() => setRegistry([]));
+  }, []);
+
   const pathOptions = storePaths.map((p) => p.join("/"));
+
+  function selectRegistryProcess(entry: BiGraphProcess) {
+    setSelectedReg(entry);
+    setRegName(entry.name.toLowerCase().replace(/\s+/g, "_"));
+    const inputs = parseSchemaString(entry.inputs);
+    const outputs = parseSchemaString(entry.outputs);
+    const wi: Record<string, string> = {};
+    for (const port of Object.keys(inputs)) wi[port] = "";
+    setRegInputs(wi);
+    const wo: Record<string, string> = {};
+    for (const port of Object.keys(outputs)) wo[port] = "";
+    setRegOutputs(wo);
+  }
 
   function handleAddStore() {
     if (!storeName) return;
@@ -54,7 +106,7 @@ export default function EditPanel({ storePaths, onAddStore, onAddProcess }: Prop
   }
 
   function handleAddRegistryProcess() {
-    if (!regName) return;
+    if (!selectedReg || !regName) return;
     const path = regParent ? [...regParent.split("/"), regName] : [regName];
     const inputs: Record<string, string[]> = {};
     for (const [port, wire] of Object.entries(regInputs)) {
@@ -66,13 +118,12 @@ export default function EditPanel({ storePaths, onAddStore, onAddProcess }: Prop
     }
     onAddProcess(path, {
       process_type: "process",
-      address: "local:custom",
+      address: selectedReg.name.includes(".") ? `local:${selectedReg.name}` : selectedReg.name,
       inputs,
       outputs,
     });
+    setSelectedReg(null);
     setRegName("");
-    setRegInputs({});
-    setRegOutputs({});
   }
 
   function handleAddCustomProcess() {
@@ -101,6 +152,12 @@ export default function EditPanel({ storePaths, onAddStore, onAddProcess }: Prop
     setCustomOutputPorts("");
     setCustomConfig("{}");
   }
+
+  const filteredRegistry = registrySearch
+    ? registry.filter((p) =>
+        p.name.toLowerCase().includes(registrySearch.toLowerCase()),
+      )
+    : registry;
 
   return (
     <div className="edit-panel">
@@ -141,11 +198,98 @@ export default function EditPanel({ storePaths, onAddStore, onAddProcess }: Prop
         )}
 
         {mode === "registry" && (
-          <div className="registry-list">
-            <div className="registry-empty">
-              Registry palette will be available in a future update (WP4)
+          <>
+            <div className="edit-field">
+              <input
+                className="registry-search"
+                placeholder="Search processes..."
+                value={registrySearch}
+                onChange={(e) => setRegistrySearch(e.target.value)}
+              />
             </div>
-          </div>
+            <div className="registry-list">
+              {filteredRegistry.map((entry) => (
+                <div
+                  key={entry.database_id}
+                  className={`registry-item ${selectedReg?.database_id === entry.database_id ? "selected" : ""}`}
+                  onClick={() => selectRegistryProcess(entry)}
+                >
+                  <span className="registry-item-name">{entry.name}</span>
+                  <span className="registry-item-ports">
+                    {entry.inputs ? Object.keys(parseSchemaString(entry.inputs)).length : 0}in/
+                    {entry.outputs ? Object.keys(parseSchemaString(entry.outputs)).length : 0}out
+                  </span>
+                </div>
+              ))}
+              {filteredRegistry.length === 0 && (
+                <div className="registry-empty">
+                  {registrySearch
+                    ? "No matches"
+                    : registry.length === 0
+                      ? "No processes found. Check the sms-api base URL."
+                      : "No processes found in registry"}
+                </div>
+              )}
+            </div>
+            {selectedReg && (
+              <div className="edit-wire-form">
+                <div className="edit-field">
+                  <label>Name</label>
+                  <input value={regName} onChange={(e) => setRegName(e.target.value)} />
+                </div>
+                <div className="edit-field">
+                  <label>Parent</label>
+                  <select value={regParent} onChange={(e) => setRegParent(e.target.value)}>
+                    <option value="">root</option>
+                    {pathOptions.map((p) => <option key={p} value={p}>{p}</option>)}
+                  </select>
+                </div>
+                <div className="edit-field">
+                  <label>Address</label>
+                  <code className="registry-address">
+                    {selectedReg.name.includes(".") ? `local:${selectedReg.name}` : selectedReg.name}
+                  </code>
+                </div>
+                {(() => {
+                  const inputs = parseSchemaString(selectedReg.inputs);
+                  return Object.keys(inputs).length > 0 ? (
+                    <>
+                      <h4>Wire Inputs</h4>
+                      {Object.entries(inputs).map(([port, type]) => (
+                        <div className="edit-field" key={port}>
+                          <label>{port} <code>{type}</code></label>
+                          <input
+                            placeholder="target/path"
+                            value={regInputs[port] || ""}
+                            onChange={(e) => setRegInputs({ ...regInputs, [port]: e.target.value })}
+                          />
+                        </div>
+                      ))}
+                    </>
+                  ) : null;
+                })()}
+                {(() => {
+                  const outputs = parseSchemaString(selectedReg.outputs);
+                  return Object.keys(outputs).length > 0 ? (
+                    <>
+                      <h4>Wire Outputs</h4>
+                      {Object.entries(outputs).map(([port, type]) => (
+                        <div className="edit-field" key={port}>
+                          <label>{port} <code>{type}</code></label>
+                          <input
+                            placeholder="target/path"
+                            value={regOutputs[port] || ""}
+                            onChange={(e) => setRegOutputs({ ...regOutputs, [port]: e.target.value })}
+                          />
+                        </div>
+                      ))}
+                    </>
+                  ) : null;
+                })()}
+                <button className="edit-submit" onClick={handleAddRegistryProcess} disabled={!regName}>Add Process</button>
+              </div>
+            )}
+          </>
         )}
 
         {mode === "custom" && (
