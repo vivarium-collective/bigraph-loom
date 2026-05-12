@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { SmsApiComposeClient } from "../smsApi";
 import { isProcess, type AnyDict } from "../convert";
+import { DEFAULT_SMS_API_BASE_URL, getSmsApiBaseUrl } from "../config";
 import type { ComposeHpcRun, ComposeJobStatus } from "../types";
 import ResultsViewer from "./ResultsViewer";
 
@@ -107,9 +108,7 @@ interface Props {
 }
 
 export default function SimulationPanel({ pbgState }: Props) {
-  const [baseUrl, setBaseUrl] = useState(() => {
-    return localStorage.getItem("smsApiBaseUrl") ?? "https://sms.cam.uchc.edu";
-  });
+  const [baseUrl, setBaseUrl] = useState(() => getSmsApiBaseUrl());
   const [intervalTime, setIntervalTime] = useState(1.0);
   const [showModal, setShowModal] = useState(false);
   const [submitting, setSubmitting] = useState(false);

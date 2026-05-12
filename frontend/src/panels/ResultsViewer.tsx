@@ -1,8 +1,9 @@
-import { useState, useCallback } from "react";
+import { useState } from "react";
 import CodeMirror from "@uiw/react-codemirror";
 import { json as jsonLang } from "@codemirror/lang-json";
 import JSZip from "jszip";
 import { SmsApiComposeClient } from "../smsApi";
+import { getSmsApiBaseUrl } from "../config";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -271,7 +272,7 @@ function DataTable({ content }: { content: string }) {
 // ── Results loader ───────────────────────────────────────────────────────────
 
 async function loadResults(simId: number): Promise<ResultsFile[]> {
-  const baseUrl = localStorage.getItem("smsApiBaseUrl") ?? "https://sms.cam.uchc.edu";
+  const baseUrl = getSmsApiBaseUrl();
   const client = new SmsApiComposeClient(baseUrl);
   const blob = await client.getSimulationResults(simId);
   const zip = await JSZip.loadAsync(blob);

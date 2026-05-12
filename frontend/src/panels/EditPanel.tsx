@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { SmsApiComposeClient } from "../smsApi";
+import { getSmsApiBaseUrl } from "../config";
 import type { BiGraphProcess } from "../types";
 
 interface Props {
@@ -56,9 +57,7 @@ export default function EditPanel({ storePaths, onAddStore, onAddProcess }: Prop
   const [regParent, setRegParent] = useState("");
   const [regInputs, setRegInputs] = useState<Record<string, string>>({});
   const [regOutputs, setRegOutputs] = useState<Record<string, string>>({});
-  const clientRef = useRef(new SmsApiComposeClient(
-    localStorage.getItem("smsApiBaseUrl") ?? "https://sms.cam.uchc.edu",
-  ));
+  const clientRef = useRef(new SmsApiComposeClient(getSmsApiBaseUrl()));
 
   // Custom process form
   const [customName, setCustomName] = useState("");

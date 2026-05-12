@@ -224,7 +224,7 @@ async function loadResults(simId: number): Promise<ResultsData> {
 
 --- 
 
-### WP6 — Hosting
+### WP6 — Hosting ✅
 
 **Config mechanism** (`frontend/src/config.ts`):
 ```typescript
