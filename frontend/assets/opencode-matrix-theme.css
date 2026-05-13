@@ -1,0 +1,342 @@
+/**
+ * OpenCode Matrix Theme — Exact 1:1 Recreation
+ *
+ * Source: Extracted from opencode binary v1.14.46
+ *   File: packages/ui/src/theme/themes/matrix.json (desktop theme)
+ *   Schema: https://opencode.ai/desktop-theme.json
+ *   Theme ID: "matrix"
+ *   Display Name: "Matrix"
+ *
+ * Two variants:
+ *   Dark  — black/deep-green background, bright phosphor-green ink
+ *   Light — pale mint background, dark forest-green ink
+ *
+ * Usage:
+ *   Default (dark):      the [data-theme="matrix"] selector below
+ *   Light override:      add [data-theme="matrix"][data-mode="light"]
+ *   Force dark:          add [data-theme="matrix"][data-mode="dark"]
+ *   Auto system pref:    @media (prefers-color-scheme: dark/light) blocks below
+ *
+ * Variable naming mirrors opencode's own token vocabulary so you can
+ * drop this directly into any web surface that already consumes the
+ * @opencode-ai/ui token layer.
+ */
+
+/* ─────────────────────────────────────────────
+   DARK VARIANT  (default / terminal look)
+   palette.neutral  #0a0e0a   deep black-green background
+   palette.ink      #62ff94   bright phosphor green text
+   palette.primary  #2eff6a   slightly brighter green for primary UI
+   ───────────────────────────────────────────── */
+[data-theme="matrix"],
+[data-theme="matrix"][data-mode="dark"] {
+
+  /* ── Palette base ───────────────────────────── */
+  --matrix-neutral:     #0a0e0a;
+  --matrix-ink:         #62ff94;
+  --matrix-primary:     #2eff6a;
+  --matrix-accent:      #c770ff;
+  --matrix-success:     #62ff94;
+  --matrix-warning:     #e6ff57;
+  --matrix-error:       #ff4b4b;
+  --matrix-info:        #30b3ff;
+  --matrix-interactive: #30b3ff;
+  --matrix-diff-add:    #77ffaf;
+  --matrix-diff-delete: #ff7171;
+
+  /* ── Semantic surface tokens ────────────────── */
+  --color-background:         #0a0e0a;   /* palette.neutral */
+  --color-surface:            #111811;   /* neutral + slight lift */
+  --color-surface-raised:     #182018;   /* neutral + more lift  */
+  --color-text:               #62ff94;   /* palette.ink          */
+  --color-text-weak:          #8ca391;   /* overrides.text-weak  */
+  --color-text-muted:         #8ca391;
+  --color-primary:            #2eff6a;
+  --color-accent:             #c770ff;
+  --color-success:            #62ff94;
+  --color-warning:            #e6ff57;
+  --color-error:              #ff4b4b;
+  --color-info:               #30b3ff;
+  --color-interactive:        #30b3ff;
+  --color-diff-add:           #77ffaf;
+  --color-diff-delete:        #ff7171;
+
+  /* ── Border / divider ───────────────────────── */
+  --color-border:             #1e2e1f;
+  --color-border-strong:      #2eff6a;
+
+  /* ── Syntax highlighting ────────────────────── */
+  --syntax-comment:           #8ca391;
+  --syntax-keyword:           #c770ff;
+  --syntax-string:            #1cc24b;
+  --syntax-primitive:         #30b3ff;
+  --syntax-variable:          #62ff94;
+  --syntax-property:          #24f6d9;
+  --syntax-type:              #e6ff57;
+  --syntax-constant:          #ffa83d;
+  --syntax-operator:          #24f6d9;
+  --syntax-punctuation:       #62ff94;
+  --syntax-object:            #62ff94;
+
+  /* ── Markdown rendering ─────────────────────── */
+  --markdown-heading:         #00efff;
+  --markdown-text:            #62ff94;
+  --markdown-link:            #30b3ff;
+  --markdown-link-text:       #24f6d9;
+  --markdown-code:            #1cc24b;
+  --markdown-block-quote:     #8ca391;
+  --markdown-emph:            #ffa83d;
+  --markdown-strong:          #e6ff57;
+  --markdown-horizontal-rule: #8ca391;
+  --markdown-list-item:       #30b3ff;
+  --markdown-list-enumeration:#24f6d9;
+  --markdown-image:           #30b3ff;
+  --markdown-image-text:      #24f6d9;
+  --markdown-code-block:      #62ff94;
+
+  /* ── Convenience shorthands ─────────────────── */
+  color-scheme: dark;
+  background-color: var(--color-background);
+  color: var(--color-text);
+}
+
+
+/* ─────────────────────────────────────────────
+   LIGHT VARIANT  (pale mint / forest-green)
+   palette.neutral  #eef3ea   pale mint background
+   palette.ink      #203022   deep forest-green text
+   palette.primary  #1cc24b   vivid green primary
+   ───────────────────────────────────────────── */
+[data-theme="matrix"][data-mode="light"] {
+
+  /* ── Palette base ───────────────────────────── */
+  --matrix-neutral:     #eef3ea;
+  --matrix-ink:         #203022;
+  --matrix-primary:     #1cc24b;
+  --matrix-accent:      #c770ff;
+  --matrix-success:     #1cc24b;
+  --matrix-warning:     #e6ff57;
+  --matrix-error:       #ff4b4b;
+  --matrix-info:        #30b3ff;
+  --matrix-interactive: #30b3ff;
+  --matrix-diff-add:    #5dac7e;
+  --matrix-diff-delete: #d53a3a;
+
+  /* ── Semantic surface tokens ────────────────── */
+  --color-background:         #eef3ea;
+  --color-surface:            #e4ece0;
+  --color-surface-raised:     #d9e6d4;
+  --color-text:               #203022;
+  --color-text-weak:          #748476;
+  --color-text-muted:         #748476;
+  --color-primary:            #1cc24b;
+  --color-accent:             #c770ff;
+  --color-success:            #1cc24b;
+  --color-warning:            #e6ff57;
+  --color-error:              #ff4b4b;
+  --color-info:               #30b3ff;
+  --color-interactive:        #30b3ff;
+  --color-diff-add:           #5dac7e;
+  --color-diff-delete:        #d53a3a;
+
+  /* ── Border / divider ───────────────────────── */
+  --color-border:             #ccd8c5;
+  --color-border-strong:      #1cc24b;
+
+  /* ── Syntax highlighting ────────────────────── */
+  --syntax-comment:           #748476;
+  --syntax-keyword:           #c770ff;
+  --syntax-string:            #1cc24b;
+  --syntax-primitive:         #30b3ff;
+  --syntax-variable:          #203022;
+  --syntax-property:          #24f6d9;
+  --syntax-type:              #e6ff57;
+  --syntax-constant:          #ffa83d;
+  --syntax-operator:          #24f6d9;
+  --syntax-punctuation:       #203022;
+  --syntax-object:            #203022;
+
+  /* ── Markdown rendering ─────────────────────── */
+  --markdown-heading:         #24f6d9;
+  --markdown-text:            #203022;
+  --markdown-link:            #30b3ff;
+  --markdown-link-text:       #24f6d9;
+  --markdown-code:            #1cc24b;
+  --markdown-block-quote:     #748476;
+  --markdown-emph:            #ffa83d;
+  --markdown-strong:          #e6ff57;
+  --markdown-horizontal-rule: #748476;
+  --markdown-list-item:       #30b3ff;
+  --markdown-list-enumeration:#24f6d9;
+  --markdown-image:           #30b3ff;
+  --markdown-image-text:      #24f6d9;
+  --markdown-code-block:      #203022;
+
+  color-scheme: light;
+  background-color: var(--color-background);
+  color: var(--color-text);
+}
+
+
+/* ─────────────────────────────────────────────
+   SYSTEM PREFERENCE FALLBACKS
+   When data-theme="matrix" is set but no explicit
+   data-mode is specified, honour the OS preference.
+   ───────────────────────────────────────────── */
+@media (prefers-color-scheme: light) {
+  [data-theme="matrix"]:not([data-mode]) {
+    --matrix-neutral:     #eef3ea;
+    --matrix-ink:         #203022;
+    --matrix-primary:     #1cc24b;
+    --matrix-accent:      #c770ff;
+    --matrix-success:     #1cc24b;
+    --matrix-warning:     #e6ff57;
+    --matrix-error:       #ff4b4b;
+    --matrix-info:        #30b3ff;
+    --matrix-interactive: #30b3ff;
+    --matrix-diff-add:    #5dac7e;
+    --matrix-diff-delete: #d53a3a;
+
+    --color-background:         #eef3ea;
+    --color-surface:            #e4ece0;
+    --color-surface-raised:     #d9e6d4;
+    --color-text:               #203022;
+    --color-text-weak:          #748476;
+    --color-text-muted:         #748476;
+    --color-primary:            #1cc24b;
+    --color-accent:             #c770ff;
+    --color-success:            #1cc24b;
+    --color-warning:            #e6ff57;
+    --color-error:              #ff4b4b;
+    --color-info:               #30b3ff;
+    --color-interactive:        #30b3ff;
+    --color-diff-add:           #5dac7e;
+    --color-diff-delete:        #d53a3a;
+
+    --color-border:             #ccd8c5;
+    --color-border-strong:      #1cc24b;
+
+    --syntax-comment:           #748476;
+    --syntax-keyword:           #c770ff;
+    --syntax-string:            #1cc24b;
+    --syntax-primitive:         #30b3ff;
+    --syntax-variable:          #203022;
+    --syntax-property:          #24f6d9;
+    --syntax-type:              #e6ff57;
+    --syntax-constant:          #ffa83d;
+    --syntax-operator:          #24f6d9;
+    --syntax-punctuation:       #203022;
+    --syntax-object:            #203022;
+
+    --markdown-heading:         #24f6d9;
+    --markdown-text:            #203022;
+    --markdown-link:            #30b3ff;
+    --markdown-link-text:       #24f6d9;
+    --markdown-code:            #1cc24b;
+    --markdown-block-quote:     #748476;
+    --markdown-emph:            #ffa83d;
+    --markdown-strong:          #e6ff57;
+    --markdown-horizontal-rule: #748476;
+    --markdown-list-item:       #30b3ff;
+    --markdown-list-enumeration:#24f6d9;
+    --markdown-image:           #30b3ff;
+    --markdown-image-text:      #24f6d9;
+    --markdown-code-block:      #203022;
+
+    color-scheme: light;
+    background-color: var(--color-background);
+    color: var(--color-text);
+  }
+}
+
+
+/* ─────────────────────────────────────────────
+   QUICK-USE: FLAT :root DARK DEFAULTS
+   Apply data-theme="matrix" to <html> or <body>,
+   or just paste the block below into :root if you
+   only need the dark variant and no selector logic.
+   ───────────────────────────────────────────── */
+/*
+:root {
+  --color-background:         #0a0e0a;
+  --color-text:               #62ff94;
+  --color-text-weak:          #8ca391;
+  --color-primary:            #2eff6a;
+  --color-accent:             #c770ff;
+  --color-success:            #62ff94;
+  --color-warning:            #e6ff57;
+  --color-error:              #ff4b4b;
+  --color-info:               #30b3ff;
+  --color-interactive:        #30b3ff;
+  --color-diff-add:           #77ffaf;
+  --color-diff-delete:        #ff7171;
+  --syntax-comment:           #8ca391;
+  --syntax-keyword:           #c770ff;
+  --syntax-string:            #1cc24b;
+  --syntax-primitive:         #30b3ff;
+  --syntax-variable:          #62ff94;
+  --syntax-property:          #24f6d9;
+  --syntax-type:              #e6ff57;
+  --syntax-constant:          #ffa83d;
+  --syntax-operator:          #24f6d9;
+  --syntax-punctuation:       #62ff94;
+  --syntax-object:            #62ff94;
+  --markdown-heading:         #00efff;
+  --markdown-text:            #62ff94;
+  --markdown-link:            #30b3ff;
+  --markdown-link-text:       #24f6d9;
+  --markdown-code:            #1cc24b;
+  --markdown-block-quote:     #8ca391;
+  --markdown-emph:            #ffa83d;
+  --markdown-strong:          #e6ff57;
+  --markdown-horizontal-rule: #8ca391;
+  --markdown-list-item:       #30b3ff;
+  --markdown-list-enumeration:#24f6d9;
+  --markdown-image:           #30b3ff;
+  --markdown-image-text:      #24f6d9;
+  --markdown-code-block:      #62ff94;
+}
+*/
+
+/* ─────────────────────────────────────────────
+   COLOR REFERENCE TABLE
+   ─────────────────────────────────────────────
+   Role                  Dark            Light
+   ─────────────────────────────────────────────
+   Background            #0a0e0a         #eef3ea
+   Text (ink)            #62ff94         #203022
+   Text weak / muted     #8ca391         #748476
+   Primary               #2eff6a         #1cc24b
+   Accent                #c770ff         #c770ff
+   Success               #62ff94         #1cc24b
+   Warning               #e6ff57         #e6ff57
+   Error                 #ff4b4b         #ff4b4b
+   Info / Interactive    #30b3ff         #30b3ff
+   Diff add              #77ffaf         #5dac7e
+   Diff delete           #ff7171         #d53a3a
+   Syntax: comment       #8ca391         #748476
+   Syntax: keyword       #c770ff         #c770ff
+   Syntax: string        #1cc24b         #1cc24b
+   Syntax: primitive     #30b3ff         #30b3ff
+   Syntax: variable      #62ff94         #203022
+   Syntax: property      #24f6d9         #24f6d9
+   Syntax: type          #e6ff57         #e6ff57
+   Syntax: constant      #ffa83d         #ffa83d
+   Syntax: operator      #24f6d9         #24f6d9
+   Syntax: punctuation   #62ff94         #203022
+   Syntax: object        #62ff94         #203022
+   Markdown heading      #00efff         #24f6d9
+   Markdown text         #62ff94         #203022
+   Markdown link         #30b3ff         #30b3ff
+   Markdown link-text    #24f6d9         #24f6d9
+   Markdown code         #1cc24b         #1cc24b
+   Markdown block-quote  #8ca391         #748476
+   Markdown emph         #ffa83d         #ffa83d
+   Markdown strong       #e6ff57         #e6ff57
+   Markdown hr           #8ca391         #748476
+   Markdown list item    #30b3ff         #30b3ff
+   Markdown list enum    #24f6d9         #24f6d9
+   Markdown image        #30b3ff         #30b3ff
+   Markdown image-text   #24f6d9         #24f6d9
+   Markdown code-block   #62ff94         #203022
+   ───────────────────────────────────────────── */
