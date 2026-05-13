@@ -12,3 +12,9 @@ frontend/dist/
 .idea/
 out/
 *.tsbuildinfo
+
+# Planner artifacts — never committed
+commits.sh
+CHANGES.md
+*_PLAN.md
+SAVE_SLOT.md

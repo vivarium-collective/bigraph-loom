@@ -33,6 +33,13 @@ npx vitest run -t "bigraphToFlow"        # single test by name pattern
 
 No linter, formatter, or typechecker config in this repo.
 
+## Planner artifacts (never committed)
+
+`CHANGES.md`, `commits.sh`, `SAVE_SLOT.md`, and `*_PLAN.md` files are planner
+artifacts local to each session. They are `.gitignore`d and must NEVER be
+committed. If one becomes tracked, run `git rm --cached <file>` to remove it
+from the index.
+
 ## Suggesting commits                                                                          
                                                        
 When you are about to suggest commits, do not run `git commit` yourself.                       
