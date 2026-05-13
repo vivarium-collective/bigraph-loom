@@ -93,3 +93,13 @@ export interface ComposeHpcRun {
   end_time: string | null;
   error_message: string | null;
 }
+
+export interface SimulationLogEntry {
+  timestamp: string;
+  message: string;
+}
+
+export interface SimulationLogResponse {
+  entries: SimulationLogEntry[];
+  truncated?: boolean;
+}

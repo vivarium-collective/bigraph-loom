@@ -1191,6 +1191,97 @@ body {
   font-size: 12px;
 }
 
+/* ── Sim progress bar ─────────────────────────────────────────────── */
+
+.sim-progress-bar {
+  width: 100%;
+  height: 8px;
+  background: rgba(0,0,0,0.15);
+  border-radius: 4px;
+  overflow: hidden;
+  margin: 8px 0;
+}
+
+.sim-progress-fill {
+  height: 100%;
+  background: var(--color-primary);
+  border-radius: 4px;
+  transition: width 0.4s ease;
+}
+
+.sim-progress-indeterminate {
+  width: 40% !important;
+  background-image: repeating-linear-gradient(
+    90deg,
+    transparent,
+    transparent 12px,
+    rgba(255,255,255,0.2) 12px,
+    rgba(255,255,255,0.2) 24px
+  );
+  animation: sim-indeterminate 1.2s ease-in-out infinite;
+}
+
+@keyframes sim-indeterminate {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(350%); }
+}
+
+/* ── Sim log viewer ───────────────────────────────────────────────── */
+
+.sim-log {
+  max-height: 200px;
+  overflow-y: auto;
+  font-family: monospace;
+  font-size: 11px;
+  background: rgba(0,0,0,0.08);
+  border-radius: 4px;
+  padding: 6px 8px;
+  margin-top: 8px;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.sim-log-line {
+  padding: 1px 0;
+  color: var(--color-text);
+  line-height: 1.4;
+}
+
+/* ── Sim metadata grid ────────────────────────────────────────────── */
+
+.sim-metadata {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 2px 12px;
+  font-size: 11px;
+  margin-top: 8px;
+  padding: 6px 8px;
+  background: rgba(0,0,0,0.05);
+  border-radius: 4px;
+}
+
+.sim-metadata-key {
+  color: var(--color-text-weak);
+  font-weight: 600;
+}
+
+.sim-metadata-value {
+  color: var(--color-text);
+  font-family: monospace;
+}
+
+/* ── Status transition animation ──────────────────────────────────── */
+
+@keyframes status-pulse {
+  0% { opacity: 1; }
+  50% { opacity: 0.6; }
+  100% { opacity: 1; }
+}
+
+.sim-status-pulse {
+  animation: status-pulse 0.6s ease-in-out 2;
+}
+
 .sim-history {
   border-top: 1px solid var(--color-border);
   padding: 10px 14px;
@@ -1217,6 +1308,21 @@ body {
   margin-left: auto;
   color: var(--color-text-muted);
   font-size: 10px;
+}
+
+.sim-history-duration {
+  color: var(--color-text-weak);
+  font-family: monospace;
+  font-size: 10px;
+}
+
+.sim-history-error {
+  color: var(--color-error);
+  font-size: 10px;
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .sim-summary {

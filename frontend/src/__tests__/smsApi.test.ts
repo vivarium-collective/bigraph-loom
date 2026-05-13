@@ -130,4 +130,65 @@ describe("SmsApiComposeClient", () => {
 
     await expect(client.waitForCompletion(42, 10, 50)).rejects.toThrow(/timed out/);
   });
+
+  it("getSimulationLog calls endpoint without truncate", async () => {
+    const response = { entries: [{ timestamp: "2025-01-01T00:00:00Z", message: "start" }], truncated: false };
+    mockFetch(response);
+    const result = await client.getSimulationLog(42);
+    expect(fetch).toHaveBeenCalledWith(`${BASE}/compose/v1/simulation/42/log`, expect.any(Object));
+    expect(result).toEqual(response);
+  });
+
+  it("getSimulationLog calls endpoint with truncate=true", async () => {
+    const response = { entries: [{ timestamp: "2025-01-01T00:00:00Z", message: "start" }], truncated: false };
+    mockFetch(response);
+    const result = await client.getSimulationLog(42, true);
+    expect(fetch).toHaveBeenCalledWith(
+      `${BASE}/compose/v1/simulation/42/log?truncate=true`,
+      expect.any(Object),
+    );
+    expect(result).toEqual(response);
+  });
+
+  it("getSimulationLog calls endpoint with truncate=false", async () => {
+    const response = { entries: [], truncated: false };
+    mockFetch(response);
+    const result = await client.getSimulationLog(42, false);
+    expect(fetch).toHaveBeenCalledWith(
+      `${BASE}/compose/v1/simulation/42/log?truncate=false`,
+      expect.any(Object),
+    );
+    expect(result).toEqual(response);
+  });
+
+  it("getSimulationLog throws on error", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce({
+      ok: false,
+      status: 500,
+      statusText: "Internal Server Error",
+      text: () => Promise.resolve("server error"),
+    } as Response);
+    await expect(client.getSimulationLog(42)).rejects.toThrow("sms-api error 500: server error");
+  });
+
+  it("cancelSimulation calls DELETE endpoint", async () => {
+    const response = { status: "cancelled" };
+    mockFetch(response);
+    const result = await client.cancelSimulation(42);
+    expect(fetch).toHaveBeenCalledWith(
+      `${BASE}/compose/v1/simulation/42/cancel`,
+      expect.objectContaining({ method: "DELETE" }),
+    );
+    expect(result).toEqual(response);
+  });
+
+  it("cancelSimulation throws on error", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce({
+      ok: false,
+      status: 501,
+      statusText: "Not Implemented",
+      text: () => Promise.resolve("not implemented"),
+    } as Response);
+    await expect(client.cancelSimulation(42)).rejects.toThrow("sms-api error 501: not implemented");
+  });
 });

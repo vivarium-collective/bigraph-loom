@@ -2,9 +2,10 @@ import type {
   BiGraphProcess,
   ComposeSimulationExperiment,
   ComposeHpcRun,
+  SimulationLogResponse,
 } from "./types";
 
-const DEFAULT_POLL_MS = 5000;
+export const DEFAULT_POLL_MS = 2000;
 const DEFAULT_TIMEOUT_MS = 3_600_000; // 1 hour
 
 /**
@@ -83,6 +84,26 @@ export class SmsApiComposeClient {
   async getSimulationDocument(simId: number): Promise<Record<string, unknown>> {
     return this._fetch<Record<string, unknown>>(
       `/compose/v1/simulation/${simId}/document`,
+    );
+  }
+
+  /** Get simulation log lines. Optional truncate param limits line count. */
+  async getSimulationLog(
+    simId: number,
+    truncate?: boolean,
+  ): Promise<SimulationLogResponse> {
+    let path = `/compose/v1/simulation/${simId}/log`;
+    if (truncate !== undefined) {
+      path += `?truncate=${String(truncate)}`;
+    }
+    return this._fetch<SimulationLogResponse>(path);
+  }
+
+  /** Cancel a running simulation (returns 501 if not implemented on backend). */
+  async cancelSimulation(simId: number): Promise<Record<string, unknown>> {
+    return this._fetch<Record<string, unknown>>(
+      `/compose/v1/simulation/${simId}/cancel`,
+      { method: "DELETE" },
     );
   }
 
