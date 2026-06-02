@@ -78,6 +78,13 @@ export default function App() {
     const p = new URLSearchParams(window.location.search);
     return p.get('id');
   });
+  // Static / view-only mode (?static=1): no dashboard server is available (e.g.
+  // GitHub Pages), so show ONLY the View tab and load the composite state from a
+  // committed JSON snapshot (?stateUrl=) instead of the /api/* endpoints.
+  const STATIC = useMemo(
+    () => new URLSearchParams(window.location.search).get('static') === '1',
+    [],
+  );
   const [runContext, setRunContext] = useState<string>('');
   // Display metadata for the top bar — composite name + the library it's from.
   const [name, setName] = useState<string | null>(null);
@@ -140,16 +147,27 @@ export default function App() {
   // self-hydrates as soon as the API responds. The opener's postMessage
   // (which arrives later) is harmless because the state is already loaded.
   useEffect(() => {
-    if (!compositeId || state) return;
+    if (state) return;
+    const params = new URLSearchParams(window.location.search);
+    const stateUrl = params.get('stateUrl');
+    // Prefer a static state snapshot (?stateUrl=) — the only source available on
+    // GitHub Pages; otherwise the dashboard's /api/composite-state by ref.
+    const src = stateUrl
+      ? stateUrl
+      : (compositeId ? '/api/composite-state?ref=' + encodeURIComponent(compositeId) : null);
+    if (!src) return;
     let cancelled = false;
-    fetch('/api/composite-state?ref=' + encodeURIComponent(compositeId))
+    fetch(src)
       .then((r) => r.json())
       .then((data) => {
         if (cancelled) return;
-        if (data?.state && !state) {
-          setState(data.state);
-          setEmitSet(new Set(topLevelStorePaths(data.state)));
-          setCollapsed(defaultCollapsedIds(data.state));
+        // Accept either an /api/composite-state response ({state: ...}) or a
+        // bare state object (a committed snapshot may be either shape).
+        const st = (data && typeof data === 'object' && 'state' in data) ? data.state : data;
+        if (st && !state) {
+          setState(st);
+          setEmitSet(new Set(topLevelStorePaths(st)));
+          setCollapsed(defaultCollapsedIds(st));
         }
       })
       .catch(() => { /* fall through to postMessage path */ });
@@ -510,7 +528,10 @@ export default function App() {
     );
   }
 
-  const tabs: TabId[] = ['view', 'configure', 'run', 'results', 'visualizations', 'document'];
+  // Static / view-only mode exposes only the View tab (the others need /api/*).
+  const tabs: TabId[] = STATIC
+    ? ['view']
+    : ['view', 'configure', 'run', 'results', 'visualizations', 'document'];
 
   return (
     <ReactFlowProvider>
@@ -538,7 +559,8 @@ export default function App() {
           </div>
         )}
         <nav style={{
-          display: 'flex', gap: 24, alignItems: 'center',
+          // In static mode only the View tab exists — drop the tab strip entirely.
+          display: STATIC ? 'none' : 'flex', gap: 24, alignItems: 'center',
           padding: '4px 16px',
           borderBottom: '1px solid #e5e7eb',
           background: '#fff',
