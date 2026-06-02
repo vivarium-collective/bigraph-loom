@@ -1,7 +1,7 @@
 // src/panels/VisualizationsPanel.tsx — rendered Visualization step output
 // from the most recent run. Each entry is the HTML produced by one viz step
 // (Plotly + inline JS); we drop it into an iframe with `srcDoc` so its
-// <script> blocks execute and don't leak into the loom-explore document.
+// <script> blocks execute and don't leak into the bigraph-loom document.
 type VizPayload = string | { html: string };
 
 export interface VisualizationsPanelProps {

@@ -6,7 +6,7 @@
 //   3. Only newly-visible nodes need fresh auto-layout positions.
 //
 // Stored shape, one key per composite id:
-//   localStorage["loom-explore:layout:<composite-id>"] = JSON {
+//   localStorage["bigraph-loom:layout:<composite-id>"] = JSON {
 //     [nodeId]: { x: number, y: number }
 //   }
 //
@@ -14,7 +14,7 @@
 
 import type { Node } from '@xyflow/react';
 
-const KEY_PREFIX = 'loom-explore:layout:';
+const KEY_PREFIX = 'bigraph-loom:layout:';
 
 export type LayoutPositions = Record<string, { x: number; y: number }>;
 

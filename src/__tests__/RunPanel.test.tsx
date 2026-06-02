@@ -49,11 +49,11 @@ describe('RunPanel start-then-poll', () => {
 
     await waitFor(() => expect(screen.getByText(/run complete/i)).toBeTruthy(),
       { timeout: 5000 });
-    expect(sessionStorage.getItem('loom-explore:active-run')).toBeNull();
+    expect(sessionStorage.getItem('bigraph-loom:active-run')).toBeNull();
   });
 
   it('re-attaches to a running run from sessionStorage on mount', async () => {
-    sessionStorage.setItem('loom-explore:active-run',
+    sessionStorage.setItem('bigraph-loom:active-run',
       JSON.stringify({ run_id: 'r-prev', composite_id: 'pkg.composites.demo' }));
     const fetchMock = mockFetchSequence({
       '/api/composite-run/r-prev/status': () => ({

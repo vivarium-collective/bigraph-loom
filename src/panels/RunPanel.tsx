@@ -24,7 +24,7 @@ export interface RunPanelProps {
   onVizHtml?: (vizHtml: Record<string, { html: string }> | null) => void;
 }
 
-const ACTIVE_RUN_KEY = 'loom-explore:active-run';
+const ACTIVE_RUN_KEY = 'bigraph-loom:active-run';
 const POLL_MS = 1500;
 
 export function RunPanel(props: RunPanelProps) {

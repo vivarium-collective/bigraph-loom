@@ -25,7 +25,7 @@ bigraph_loom.index_html()   # → .../bigraph_loom/_dist/index.html
 
 A host application (e.g. **vivarium-dashboard**) adds `bigraph-loom` as a
 dependency and serves the static bundle from `asset_dir()` at its own URL prefix
-(the dashboard mounts it at `/loom-explore`) — no vendored copy of the build.
+(the dashboard mounts it at `/bigraph-loom`) — no vendored copy of the build.
 
 Install editable for development:
 
@@ -43,7 +43,7 @@ picks the new bundle up immediately.
 
 ## Embed (iframe + postMessage)
 
-    <iframe src="/loom-explore/index.html"></iframe>
+    <iframe src="/bigraph-loom/index.html"></iframe>
 
 After load, send the composite state:
 

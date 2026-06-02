@@ -448,7 +448,7 @@ export default function App() {
   if (!state) {
     return (
       <div style={{ padding: 24, fontFamily: 'system-ui' }}>
-        <h3>bigraph-loom-explore</h3>
+        <h3>bigraph-loom</h3>
         <p style={{ color: '#666' }}>
           {compositeId ? `Loading composite "${compositeId}"…` : 'Waiting for composite data…'}
         </p>
