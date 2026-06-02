@@ -67,6 +67,14 @@ export default function App() {
   );
   // Explicitly hidden node ids (via the sidebar Processes/Nodes toggles).
   const [hidden, setHidden] = useState<Set<string>>(new Set());
+  // Mirror `hidden` in a ref so the (async) layout effect can read the LATEST
+  // hidden set without taking it as a dependency — which would force an ELK
+  // relayout on every toggle. Needed so rebuilt edges stay hidden-correct: the
+  // layout effect's setEdges otherwise clobbers the [hidden] effect's flags
+  // (race when applying a view that sets collapsed + hidden together → wires to
+  // removed processes kept rendering).
+  const hiddenRef = useRef(hidden);
+  hiddenRef.current = hidden;
   // Explicit-emit store paths (joined by '/'). Descendants inherit emission.
   // Seeded with every top-level store so all states emit by default.
   const [emitSet, setEmitSet] = useState<Set<string>>(
@@ -234,22 +242,30 @@ export default function App() {
       const laid = await applyLayout(visibleNodes as any, visibleEdges as any);
       const withSaved = applySavedPositions(laid as any, saved) as any[];
       if (cancelled) return;
+      // Apply the CURRENT hidden set to the freshly-rebuilt nodes + edges (read
+      // via ref, not a dep). Without this, rebuilding edges here would drop the
+      // [hidden] effect's flags and render wires to hidden ("removed") processes.
+      const hiddenIds = hiddenNodeIds(raw.nodes as any[], hiddenRef.current);
       // Preserve object identity for nodes that didn't move (or change hidden
       // state) so React Flow does NOT unmount+remount them on collapse/expand.
       setNodes((prev: any[]) => {
         const prevById = new Map(prev.map((n) => [n.id, n]));
         return withSaved.map((n) => {
+          const h = hiddenIds.has(n.id);
           const p = prevById.get(n.id);
           if (p
             && p.position?.x === n.position?.x
             && p.position?.y === n.position?.y
-            && (p.hidden ?? false) === (n.hidden ?? false)) {
+            && (p.hidden ?? false) === h) {
             return p;
           }
-          return p ? { ...p, position: n.position, data: n.data } : n;
+          return { ...(p ?? n), position: n.position, data: n.data, hidden: h };
         });
       });
-      setEdges(visibleEdges as any);
+      setEdges(visibleEdges.map((e: any) => {
+        const h = hiddenIds.has(e.source) || hiddenIds.has(e.target);
+        return h ? { ...e, hidden: true } : e;
+      }));
     })();
 
     return () => { cancelled = true; };
@@ -668,7 +684,7 @@ export default function App() {
                   fitViewOptions={{ padding: 0.2 }}
                   /* Big composites have hundreds of nodes + custom floating edges;
                      only render what's in the viewport so pan/zoom stays smooth. */
-                  onlyRenderVisibleElements={!exporting}
+                  onlyRenderVisibleElements={!exporting && !STATIC}
                   minZoom={0.02}
                   /* Read-only viewer for wiring/structure, but users CAN rearrange
                      node positions by dragging individual nodes. What's forbidden:
