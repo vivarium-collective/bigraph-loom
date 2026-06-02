@@ -17,6 +17,8 @@ import {
 } from './layoutStore';
 import { stateToReactFlow, topLevelStorePaths, defaultCollapsedIds } from './convert';
 import { isHiddenByAncestor, retargetEdgesToVisible, hiddenNodeIds } from './panels/filterHidden';
+import ViewsMenu from './panels/ViewsMenu';
+import { getDefaultView, decodeView, fetchView, type View } from './viewStore';
 import { Sidebar } from './panels/Sidebar';
 import { RunPanel } from './panels/RunPanel';
 import { ResultsPanel } from './panels/ResultsPanel';
@@ -329,6 +331,46 @@ export default function App() {
     })();
   }, [compositeId, state, raw, collapsed, hidden, setNodes, setEdges]);
 
+  // ---- Saved views ---------------------------------------------------------
+  // A "view" snapshots the current arrangement + visibility. Capturing reads the
+  // live node positions plus the collapsed/hidden selections.
+  const captureCurrentView = useCallback((): View => ({
+    v: 1,
+    positions: positionsFromNodes(nodes as any),
+    collapsed: [...collapsed],
+    hidden: [...hidden],
+  }), [nodes, collapsed, hidden]);
+
+  // Applying a view pins its positions (via the layout store, which the layout
+  // effect reads) and sets collapsed/hidden — the existing effects re-lay-out
+  // and toggle visibility. Then re-fit so the saved arrangement is framed.
+  const applyView = useCallback((view: View) => {
+    if (!compositeId || !view) return;
+    saveLayout(compositeId, view.positions || {});
+    setCollapsed(new Set(view.collapsed || []));
+    setHidden(new Set(view.hidden || []));
+    window.setTimeout(() => rfRef.current?.fitView?.({ padding: 0.15, duration: 400 }), 240);
+  }, [compositeId]);
+
+  // On open, apply a startup view ONCE per composite, in priority order:
+  //   1. ?view=<encoded>   (ad-hoc shareable link)
+  //   2. ?viewUrl=<url>    (committed view file — README-featured link)
+  //   3. the saved default view for this composite (localStorage)
+  const startupViewRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!state || !compositeId) return;
+    if (startupViewRef.current === compositeId) return;
+    startupViewRef.current = compositeId;
+    (async () => {
+      const params = new URLSearchParams(window.location.search);
+      let view: View | null = decodeView(params.get('view'));
+      const viewUrl = params.get('viewUrl');
+      if (!view && viewUrl) view = await fetchView(viewUrl);
+      if (!view) view = getDefaultView(compositeId);
+      if (view) applyView(view);
+    })();
+  }, [state, compositeId, applyView]);
+
   // Export the CURRENT layout (all nodes in their positions) to an image on a
   // WHITE background. Captures the React Flow viewport element via html-to-image,
   // framed to the full nodes bounds (not just the on-screen viewport).
@@ -536,6 +578,11 @@ export default function App() {
                   position: 'absolute', top: 8, right: 8, zIndex: 10,
                   display: 'flex', gap: 6,
                 }}>
+                  <ViewsMenu
+                    compositeId={compositeId}
+                    captureCurrentView={captureCurrentView}
+                    applyView={applyView}
+                  />
                   <button
                     onClick={handleResetLayout}
                     title="Re-run auto-layout on the currently visible nodes and fit the view"
