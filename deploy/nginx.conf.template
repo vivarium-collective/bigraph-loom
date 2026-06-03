@@ -1,0 +1,14 @@
+server {
+    listen       ${PORT};
+    listen       [::]:${PORT};
+    server_name  _;
+
+    root   /usr/share/nginx/html;
+    index  index.html;
+
+    # Read-only single-page viewer: fall back to index.html for any path so
+    # client-side routes resolve instead of 404-ing.
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+}
