@@ -20,11 +20,9 @@ Homepage = "https://github.com/vivarium-collective/bigraph-loom"
 # The importable Python package. Its `_dist/` subdir (the Vite build output)
 # is shipped as package data so `asset_dir()` resolves at runtime.
 packages = ["bigraph_loom"]
-
-[tool.hatch.build.targets.wheel.force-include]
-# Ensure the built front-end bundle is always included in the wheel even though
-# it is a generated artifact (committed to git, refreshed by `npm run build`).
-"bigraph_loom/_dist" = "bigraph_loom/_dist"
+# Note: `bigraph_loom/_dist` (the Vite build output) is committed to git and lives
+# inside the package dir, so `packages` already ships it. A force-include here would
+# add every file a second time and hatchling errors on the duplicate wheel entry.
 
 [tool.hatch.build.targets.sdist]
 # Source distributions ship the JS source too, so the bundle can be rebuilt.
