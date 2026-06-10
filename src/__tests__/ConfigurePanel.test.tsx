@@ -71,6 +71,56 @@ describe('ConfigurePanel', () => {
     expect(calledUrl).toContain(encodeURIComponent('["BIOMD0000000001","BIOMD0000000005"]'));
   });
 
+  it('renders a <select> dropdown for a param with choices, defaulting to its default', () => {
+    const params = {
+      emitter: {
+        type: 'string' as const,
+        default: 'parquet',
+        choices: ['parquet', 'sqlite', 'xarray', 'null'],
+        description: 'Observation sink.',
+      },
+    };
+    render(
+      <ConfigurePanel
+        compositeId="x.baseline"
+        parameters={params}
+        overrides={{}}
+        onApplied={() => {}}
+      />
+    );
+    const sel = screen.getByLabelText(/emitter/i) as HTMLSelectElement;
+    expect(sel.tagName).toBe('SELECT');
+    expect(sel.value).toBe('parquet');
+    // One <option> per choice.
+    const opts = Array.from(sel.querySelectorAll('option')).map((o) => o.value);
+    expect(opts).toEqual(['parquet', 'sqlite', 'xarray', 'null']);
+  });
+
+  it('choices dropdown: changing selection feeds the chosen value to onApplied', async () => {
+    vi.stubGlobal('fetch', mockFetchOk({ state: {}, parameters: {} }) as any);
+    const onApplied = vi.fn();
+    const params = {
+      emitter: {
+        type: 'string' as const,
+        default: 'parquet',
+        choices: ['parquet', 'sqlite', 'xarray', 'null'],
+      },
+    };
+    render(
+      <ConfigurePanel
+        compositeId="x.baseline"
+        parameters={params}
+        overrides={{}}
+        onApplied={onApplied}
+      />
+    );
+    const sel = screen.getByLabelText(/emitter/i) as HTMLSelectElement;
+    fireEvent.change(sel, { target: { value: 'sqlite' } });
+    fireEvent.click(screen.getByText('Apply'));
+    await waitFor(() => expect(onApplied).toHaveBeenCalled());
+    expect(onApplied.mock.calls[0][0]).toEqual({ emitter: 'sqlite' });
+  });
+
   it('no parameters → empty-state message, no inputs', () => {
     render(
       <ConfigurePanel

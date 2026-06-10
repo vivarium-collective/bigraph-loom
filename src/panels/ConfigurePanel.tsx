@@ -121,7 +121,18 @@ export function ConfigurePanel({
                   {pdef.description}
                 </div>
               )}
-              {pdef.type === 'list[string]' ? (
+              {Array.isArray(pdef.choices) && pdef.choices.length > 0 ? (
+                <select
+                  id={id}
+                  value={String(val)}
+                  onChange={(e) => onChange(e.target.value)}
+                  style={{ fontSize: 13, padding: '4px 8px' }}
+                >
+                  {pdef.choices.map((c) => (
+                    <option key={c} value={c}>{c}</option>
+                  ))}
+                </select>
+              ) : pdef.type === 'list[string]' ? (
                 <textarea
                   id={id}
                   rows={Math.max(3, String(val).split('\n').length + 1)}

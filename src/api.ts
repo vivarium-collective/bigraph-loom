@@ -6,6 +6,9 @@ export interface ParameterDecl {
   type: 'string' | 'int' | 'float' | 'bool' | 'list[string]' | string;
   default?: unknown;
   description?: string;
+  /** Optional enum: when present (a list of allowed string values), the
+   *  Configure form renders a dropdown instead of a free-text input. */
+  choices?: string[];
 }
 
 export type CompositeLoadMsg = {
