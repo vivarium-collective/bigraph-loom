@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { describe, it, expect, beforeAll, afterEach } from 'vitest';
+import { describe, it, expect, beforeAll, afterEach, vi } from 'vitest';
 import { render, screen, act, cleanup } from '@testing-library/react';
 import App from '../App';
 
@@ -28,32 +28,40 @@ describe('App static mode initial tab', () => {
     // Restore URL to plain root after each test so subsequent tests start clean.
     window.history.pushState({}, '', '/');
   });
+  afterEach(() => { vi.unstubAllGlobals(); });
 
-  it('defaults to wiring canvas (not setup panel) when ?static=1', () => {
-    // Use history.pushState — the idiomatic jsdom way to change location.search
-    // without breaking the window.location object for subsequent tests.
+  it('static mode shows all tabs and defaults to Setup & Run', () => {
     window.history.pushState({}, '', '?static=1');
     render(<App />);
-
-    // Load a composite so the app exits its early "Waiting for composite…" guard
-    // and renders the full tab layout. Without this, state===null causes an early
-    // return that skips all panels, making tab assertions vacuous.
     postCompositeLoad({ id: 'test.composites.demo', name: 'demo' });
 
-    // SetupRunPanel is only mounted when tab==='setup'.
-    // In static mode, with our fix, tab initialises to 'wiring', so SetupRunPanel
-    // is absent — its Run button and Steps label must not exist in the DOM.
-    expect(screen.queryByRole('button', { name: /^Run$/i })).toBeNull();
-    expect(screen.queryByLabelText(/^Steps/i)).toBeNull();
+    // The tab strip is visible in static mode and includes every tab.
+    expect(screen.getByRole('button', { name: /Setup & Run/i })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /^Results$/i })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /^Visualizations$/i })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /^Wiring$/i })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /^Document$/i })).toBeTruthy();
+    // Default tab is Setup & Run → its read-only note renders.
+    expect(screen.getByText(/read-only preview|live dashboard/i)).toBeTruthy();
+  });
 
-    // Positive assertion: the wiring canvas wrapper has display:flex (active tab).
-    // App renders: `display: tab === 'wiring' ? 'flex' : 'none'` on the canvas div.
-    // Without the fix tab would be 'setup' → display:none → the assertion below fails.
-    const allDivs = Array.from(document.querySelectorAll<HTMLElement>('div[style]'));
-    const wiringActive = allDivs.some(
-      (el) => el.style.display === 'flex' && el.style.position === 'absolute',
-    );
-    expect(wiringActive).toBe(true);
+  it('static loader seeds parameters + steps from a resolve-dict stateUrl', async () => {
+    const resolveDict = {
+      id: 'test.composites.demo', name: 'demo',
+      state: { top: {} },
+      parameters: { seed: { type: 'int', default: 7, description: 'RNG seed' } },
+      default_n_steps: 42,
+    };
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true, status: 200, json: async () => resolveDict,
+    }) as any);
+    window.history.pushState({}, '', '?static=1&stateUrl=/x.json');
+    render(<App />);
+    // The Setup & Run form should show the published parameter + its default.
+    // findAllByText: both the <code>seed</code> key and the "RNG seed" description render.
+    expect((await screen.findAllByText((t) => t.includes('seed'))).length).toBeGreaterThan(0);
+    const input = await screen.findByLabelText(/seed/i) as HTMLInputElement;
+    expect(input.value).toBe('7');
   });
 });
 

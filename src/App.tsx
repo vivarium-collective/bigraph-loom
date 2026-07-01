@@ -79,11 +79,7 @@ export default function App() {
   const [emitSet, setEmitSet] = useState<Set<string>>(
     () => new Set(topLevelStorePaths(decodeUrlComposite())),
   );
-  const [tab, setTab] = useState<TabId>(
-    () => new URLSearchParams(window.location.search).get('static') === '1'
-      ? 'wiring'
-      : 'setup',
-  );
+  const [tab, setTab] = useState<TabId>('setup');
   const [compositeId, setCompositeId] = useState<string | null>(() => {
     // Bootstrap from URL query if present (for popups deep-linked with ?id=)
     const p = new URLSearchParams(window.location.search);
@@ -184,6 +180,17 @@ export default function App() {
           setState(st);
           setEmitSet(new Set(topLevelStorePaths(st)));
           setCollapsed(defaultCollapsedIds(st));
+          // The published composite-state JSON is the full resolve dict — it also
+          // carries the configure-form inputs. Seed them so Setup & Run renders
+          // (read-only) in static mode. Absent on bare-state snapshots — tolerate.
+          if (data && typeof data === 'object' && data !== st) {
+            if (data.parameters) setParameters(data.parameters);
+            if (data.overrides) setOverrides(data.overrides);
+            if (data.default_n_steps != null) setDefaultSteps(data.default_n_steps);
+            if (data.name) setName(data.name);
+            if (data.library) setLibrary(data.library);
+            if (data.id) setCompositeId(data.id);
+          }
         }
       })
       .catch(() => { /* fall through to postMessage path */ });
@@ -552,10 +559,10 @@ export default function App() {
     );
   }
 
-  // Static / view-only mode exposes only the Wiring tab (the others need /api/*).
-  const tabs: TabId[] = STATIC
-    ? ['wiring']
-    : ['setup', 'results', 'visualizations', 'wiring', 'document'];
+  // All tabs are available in static mode too. Setup & Run renders read-only
+  // (form visible, Run/Preview disabled); Results/Visualizations show a
+  // read-only empty state (no run data in the snapshot).
+  const tabs: TabId[] = ['setup', 'results', 'visualizations', 'wiring', 'document'];
 
   // Display label map: ids that need a human-readable label different from the
   // capitalized id. E.g. 'setup' → 'Setup & Run'.
@@ -587,8 +594,7 @@ export default function App() {
           </div>
         )}
         <nav style={{
-          // In static mode only the View tab exists — drop the tab strip entirely.
-          display: STATIC ? 'none' : 'flex', gap: 24, alignItems: 'center',
+          display: 'flex', gap: 24, alignItems: 'center',
           padding: '4px 16px',
           borderBottom: '1px solid #e5e7eb',
           background: '#fff',
@@ -735,6 +741,7 @@ export default function App() {
               onVizHtml={setVizHtml}
               onCompleted={() => setTab('results')}
               onRunState={(s) => { setActiveRunId(s.runId); setDownloadable(s.downloadable); }}
+              readOnly={STATIC}
             />
           )}
           {tab === 'results' && (
@@ -743,12 +750,14 @@ export default function App() {
               hasRun={trajectory !== null || vizHtml !== null}
               runId={activeRunId}
               downloadable={downloadable}
+              readOnly={STATIC}
             />
           )}
           {tab === 'visualizations' && (
             <VisualizationsPanel
               vizHtml={vizHtml}
               hasRun={trajectory !== null || vizHtml !== null}
+              readOnly={STATIC}
             />
           )}
           {tab === 'document' && (

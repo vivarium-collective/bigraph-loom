@@ -7,13 +7,14 @@ type VizPayload = string | { html: string };
 export interface VisualizationsPanelProps {
   vizHtml: Record<string, VizPayload> | null;
   hasRun: boolean;
+  readOnly?: boolean;
 }
 
 function _payloadHtml(p: VizPayload): string {
   return typeof p === 'string' ? p : (p?.html || '');
 }
 
-export function VisualizationsPanel({ vizHtml, hasRun }: VisualizationsPanelProps) {
+export function VisualizationsPanel({ vizHtml, hasRun, readOnly }: VisualizationsPanelProps) {
   const wrap: React.CSSProperties = { padding: 16, fontFamily: 'system-ui, sans-serif' };
 
   if (!vizHtml) {
@@ -21,7 +22,9 @@ export function VisualizationsPanel({ vizHtml, hasRun }: VisualizationsPanelProp
       <div style={wrap}>
         <h3 style={{ marginTop: 0 }}>Visualizations</h3>
         <p style={{ color: '#6b7280' }}>
-          {hasRun ? 'Loading visualizations…' : 'No run yet. Go to the Run tab to start one.'}
+          {readOnly
+            ? 'The read-only mirror does not include run data — run this composite in a live dashboard to see visualizations.'
+            : hasRun ? 'Loading visualizations…' : 'No run yet. Go to the Run tab to start one.'}
         </p>
       </div>
     );
