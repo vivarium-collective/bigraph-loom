@@ -930,3 +930,93 @@ body {
 .registry-item-name { font-weight: 600; color: #1e293b; }
 .registry-item-ports { font-size: 10px; color: #94a3b8; }
 .registry-empty { padding: 12px; text-align: center; color: #94a3b8; font-size: 12px; }
+
+/* ── Setup & Run panel ───────────────────────────────────────────────── */
+
+.sr-panel {
+  padding: 16px;
+  font-family: system-ui, sans-serif;
+  max-width: 720px;
+  padding-bottom: 72px; /* keep content clear of sticky action bar */
+}
+
+.sr-section {
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 16px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+  margin-bottom: 16px;
+}
+
+.sr-section h3 {
+  margin-top: 0;
+  color: #1e293b;
+  font-size: 15px;
+  margin-bottom: 12px;
+}
+
+.sr-field {
+  margin-bottom: 14px;
+}
+
+.sr-field:last-child {
+  margin-bottom: 0;
+}
+
+.sr-field > label {
+  display: block;
+  margin-bottom: 4px;
+}
+
+.sr-input {
+  font-size: 13px;
+  padding: 4px 8px;
+  border: 1px solid #e2e8f0;
+  border-radius: 4px;
+  font-family: inherit;
+}
+
+.sr-input:focus {
+  outline: none;
+  border-color: #6366f1;
+}
+
+textarea.sr-input {
+  width: 100%;
+  font-family: monospace;
+  padding: 6px 8px;
+  resize: vertical;
+}
+
+.sr-actionbar {
+  position: sticky;
+  bottom: 0;
+  background: #ffffff;
+  border-top: 1px solid #e5e7eb;
+  padding: 10px 0;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  box-shadow: 0 -2px 8px rgba(0, 0, 0, 0.06);
+  z-index: 10;
+}
+
+.sr-run-btn {
+  padding: 8px 20px;
+  font-size: 14px;
+  font-weight: 600;
+  background: #6366f1;
+  color: #ffffff;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.sr-run-btn:hover { background: #4f46e5; }
+
+.sr-run-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}

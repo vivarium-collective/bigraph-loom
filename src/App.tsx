@@ -20,11 +20,10 @@ import { isHiddenByAncestor, retargetEdgesToVisible, hiddenNodeIds } from './pan
 import ViewsMenu from './panels/ViewsMenu';
 import { getDefaultView, decodeView, fetchView, type View } from './viewStore';
 import { Sidebar } from './panels/Sidebar';
-import { RunPanel } from './panels/RunPanel';
+import { SetupRunPanel } from './panels/SetupRunPanel';
 import { ResultsPanel } from './panels/ResultsPanel';
 import { VisualizationsPanel } from './panels/VisualizationsPanel';
 import { DocumentPanel } from './panels/DocumentPanel';
-import { ConfigurePanel } from './panels/ConfigurePanel';
 import { EmitContext } from './EmitContext';
 import {
   postReady, postInspect, postEmitChanged, onCompositeLoad, decodeUrlComposite,
@@ -54,7 +53,7 @@ function boundsOf(nodes: any[]): { x: number; y: number; width: number; height: 
   return { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
 }
 
-type TabId = 'view' | 'configure' | 'run' | 'results' | 'visualizations' | 'document';
+type TabId = 'setup' | 'results' | 'visualizations' | 'wiring' | 'document';
 
 type TrajectoryRow = { step: number; time?: number; state: Record<string, unknown> };
 
@@ -80,7 +79,11 @@ export default function App() {
   const [emitSet, setEmitSet] = useState<Set<string>>(
     () => new Set(topLevelStorePaths(decodeUrlComposite())),
   );
-  const [tab, setTab] = useState<TabId>('view');
+  const [tab, setTab] = useState<TabId>(
+    () => new URLSearchParams(window.location.search).get('static') === '1'
+      ? 'wiring'
+      : 'setup',
+  );
   const [compositeId, setCompositeId] = useState<string | null>(() => {
     // Bootstrap from URL query if present (for popups deep-linked with ?id=)
     const p = new URLSearchParams(window.location.search);
@@ -101,11 +104,14 @@ export default function App() {
   const [parameters, setParameters] = useState<Record<string, ParameterDecl>>({});
   const [overrides, setOverrides] = useState<Record<string, unknown>>({});
   // From the composite_generator decorator's `default_n_steps=` argument.
-  // RunPanel seeds its steps input from this when a new composite loads.
+  // SetupRunPanel seeds its steps input from this when a new composite loads.
   const [defaultSteps, setDefaultSteps] = useState<number | undefined>(undefined);
   // Run output, lifted up so Results / Visualizations tabs can read it.
   const [trajectory, setTrajectory] = useState<TrajectoryRow[] | null>(null);
   const [vizHtml, setVizHtml] = useState<Record<string, { html: string }> | null>(null);
+  // Latest run id + downloadable flag, lifted from SetupRunPanel via onRunState.
+  const [activeRunId, setActiveRunId] = useState<string | null>(null);
+  const [downloadable, setDownloadable] = useState(false);
   const readyFiredRef = useRef(false);
   // React Flow instance, captured via onInit, so Re-layout can frame the
   // freshly-consolidated set (App is the ReactFlowProvider's PARENT, so it can't
@@ -142,6 +148,8 @@ export default function App() {
       // A new composite loaded — clear any prior run output.
       setTrajectory(null);
       setVizHtml(null);
+      setActiveRunId(null);
+      setDownloadable(false);
     });
     if (!readyFiredRef.current) {
       readyFiredRef.current = true;
@@ -544,10 +552,14 @@ export default function App() {
     );
   }
 
-  // Static / view-only mode exposes only the View tab (the others need /api/*).
+  // Static / view-only mode exposes only the Wiring tab (the others need /api/*).
   const tabs: TabId[] = STATIC
-    ? ['view']
-    : ['view', 'configure', 'run', 'results', 'visualizations', 'document'];
+    ? ['wiring']
+    : ['setup', 'results', 'visualizations', 'wiring', 'document'];
+
+  // Display label map: ids that need a human-readable label different from the
+  // capitalized id. E.g. 'setup' → 'Setup & Run'.
+  const TAB_LABELS: Partial<Record<TabId, string>> = { setup: 'Setup & Run' };
 
   return (
     <ReactFlowProvider>
@@ -595,17 +607,17 @@ export default function App() {
                 cursor: 'pointer', textTransform: 'capitalize',
               }}
             >
-              {t}
+              {TAB_LABELS[t] ?? t}
             </button>
           ))}
         </nav>
 
         <div style={{ flex: 1, overflow: 'auto', position: 'relative' }}>
-          {/* The View tab must always be rendered so ReactFlow doesn't lose
+          {/* The Wiring tab must always be rendered so ReactFlow doesn't lose
               its node-position state on tab switches; we hide it instead. */}
           <div style={{
             position: 'absolute', inset: 0,
-            display: tab === 'view' ? 'flex' : 'none',
+            display: tab === 'wiring' ? 'flex' : 'none',
             flexDirection: 'row',
           }}>
             <EmitContext.Provider value={emitSet}>
@@ -710,29 +722,27 @@ export default function App() {
               />
             </EmitContext.Provider>
           </div>
-          {tab === 'configure' && (
-            <ConfigurePanel
+          {tab === 'setup' && (
+            <SetupRunPanel
               compositeId={compositeId}
               parameters={parameters}
               overrides={overrides}
-              onApplied={handleApplied}
-            />
-          )}
-          {tab === 'run' && (
-            <RunPanel
-              compositeId={compositeId}
               emitSet={emitSet}
-              overrides={overrides}
               runContext={runContext}
               defaultSteps={defaultSteps}
+              onApplied={handleApplied}
               onTrajectory={setTrajectory}
               onVizHtml={setVizHtml}
+              onCompleted={() => setTab('results')}
+              onRunState={(s) => { setActiveRunId(s.runId); setDownloadable(s.downloadable); }}
             />
           )}
           {tab === 'results' && (
             <ResultsPanel
               trajectory={trajectory}
               hasRun={trajectory !== null || vizHtml !== null}
+              runId={activeRunId}
+              downloadable={downloadable}
             />
           )}
           {tab === 'visualizations' && (

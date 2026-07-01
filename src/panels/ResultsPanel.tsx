@@ -4,12 +4,15 @@
 // time series; each row is expandable to scrub through the captured values.
 import { useState } from 'react';
 import { JsonTree } from './JsonNode';
+import { runDownloadUrl } from '../api';
 
 type TrajectoryRow = { step: number; time?: number; state: Record<string, unknown> };
 
 export interface ResultsPanelProps {
   trajectory: TrajectoryRow[] | null;  // null = no run yet (or run in flight)
   hasRun: boolean;                     // a completed run exists
+  runId?: string | null;
+  downloadable?: boolean;
 }
 
 function _trajectoryToObservables(
@@ -98,13 +101,28 @@ function ObservableRow({ name, entries }: { name: string; entries: any[] }) {
   );
 }
 
-export function ResultsPanel({ trajectory, hasRun }: ResultsPanelProps) {
+export function ResultsPanel({ trajectory, hasRun, runId, downloadable }: ResultsPanelProps) {
   const wrap: React.CSSProperties = { padding: 16, fontFamily: 'system-ui, sans-serif' };
+
+  const downloadLink = downloadable && runId ? (
+    <a
+      href={runDownloadUrl(runId)}
+      download
+      style={{
+        display: 'inline-block', margin: '4px 0 12px', padding: '6px 14px',
+        fontSize: 13, fontWeight: 600, background: '#6366f1', color: '#fff',
+        borderRadius: 6, textDecoration: 'none',
+      }}
+    >
+      ⬇ Download results
+    </a>
+  ) : null;
 
   if (!trajectory) {
     return (
       <div style={wrap}>
         <h3 style={{ marginTop: 0 }}>Results</h3>
+        {downloadLink}
         <p style={{ color: '#6b7280' }}>
           {hasRun ? 'Loading trajectory…' : 'No run yet. Go to the Run tab to start one.'}
         </p>
@@ -118,6 +136,7 @@ export function ResultsPanel({ trajectory, hasRun }: ResultsPanelProps) {
   return (
     <div style={wrap}>
       <h3 style={{ marginTop: 0 }}>Results</h3>
+      {downloadLink}
       {keys.length === 0 ? (
         <p style={{ color: '#6b7280' }}>
           Run complete — no observables emitted. Toggle stores in the View
