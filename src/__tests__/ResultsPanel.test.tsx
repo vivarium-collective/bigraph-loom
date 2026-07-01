@@ -63,6 +63,11 @@ describe('ResultsPanel download link', () => {
     expect(screen.queryByRole('link', { name: /download results/i })).toBeNull();
   });
 
+  it('readOnly + no trajectory shows the live-only message', () => {
+    render(<ResultsPanel trajectory={null} hasRun={false} readOnly />);
+    expect(screen.getByText(/read-only mirror|live dashboard/i)).toBeTruthy();
+  });
+
   it('renders the download link alongside trajectory data', () => {
     const trajectory = [
       { step: 1, state: { obs: { val: 1 } } },

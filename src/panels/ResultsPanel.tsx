@@ -13,6 +13,7 @@ export interface ResultsPanelProps {
   hasRun: boolean;                     // a completed run exists
   runId?: string | null;
   downloadable?: boolean;
+  readOnly?: boolean;
 }
 
 function _trajectoryToObservables(
@@ -101,7 +102,7 @@ function ObservableRow({ name, entries }: { name: string; entries: any[] }) {
   );
 }
 
-export function ResultsPanel({ trajectory, hasRun, runId, downloadable }: ResultsPanelProps) {
+export function ResultsPanel({ trajectory, hasRun, runId, downloadable, readOnly }: ResultsPanelProps) {
   const wrap: React.CSSProperties = { padding: 16, fontFamily: 'system-ui, sans-serif' };
 
   const downloadLink = downloadable && runId ? (
@@ -124,7 +125,9 @@ export function ResultsPanel({ trajectory, hasRun, runId, downloadable }: Result
         <h3 style={{ marginTop: 0 }}>Results</h3>
         {downloadLink}
         <p style={{ color: '#6b7280' }}>
-          {hasRun ? 'Loading trajectory…' : 'No run yet. Go to the Run tab to start one.'}
+          {readOnly
+            ? 'The read-only mirror does not include run data — run this composite in a live dashboard to see results.'
+            : hasRun ? 'Loading trajectory…' : 'No run yet. Go to the Run tab to start one.'}
         </p>
       </div>
     );
