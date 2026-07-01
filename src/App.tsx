@@ -79,7 +79,11 @@ export default function App() {
   const [emitSet, setEmitSet] = useState<Set<string>>(
     () => new Set(topLevelStorePaths(decodeUrlComposite())),
   );
-  const [tab, setTab] = useState<TabId>('setup');
+  const [tab, setTab] = useState<TabId>(
+    () => new URLSearchParams(window.location.search).get('static') === '1'
+      ? 'wiring'
+      : 'setup',
+  );
   const [compositeId, setCompositeId] = useState<string | null>(() => {
     // Bootstrap from URL query if present (for popups deep-linked with ?id=)
     const p = new URLSearchParams(window.location.search);

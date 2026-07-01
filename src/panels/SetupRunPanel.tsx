@@ -173,7 +173,7 @@ export function SetupRunPanel(props: SetupRunPanelProps) {
         sessionStorage.removeItem(ACTIVE_RUN_KEY);
         if (s.status === 'completed' && props.compositeId) {
           postRunComplete(id, props.compositeId);
-          onCompletedRef.current?.();
+          onCompletedRef.current();
         }
       }
     };
