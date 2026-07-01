@@ -3,8 +3,8 @@
 // Combines ConfigurePanel (parameter configuration form) and RunPanel (run
 // controls + polling) into one scrollable panel. Layout:
 //   1. Parameters section (card with one input per declared parameter)
-//   2. Steps + Run action
-//   3. Progress / error / completion feedback
+//   2. Progress / error / completion feedback
+//   3. Sticky action bar: Steps + Run CTA
 //
 // On run: the current form values are cast and passed directly as overrides to
 // startRun — no separate "Apply" step required. A secondary "Preview wiring"
@@ -14,7 +14,6 @@
 // On terminal `completed`: calls postRunComplete (postMessage to dashboard) AND
 // props.onCompleted() so App can switch to the Results tab.
 import { useEffect, useRef, useState, useCallback } from 'react';
-import type React from 'react';
 import type { ParameterDecl } from '../api';
 import {
   postRunComplete, startRun, fetchRunStatus, fetchRunTrajectory,
@@ -269,14 +268,11 @@ export function SetupRunPanel(props: SetupRunPanelProps) {
   // ---- Render -------------------------------------------------------------
 
   const paramKeys = Object.keys(props.parameters);
-  const wrapStyle: React.CSSProperties = {
-    padding: 16, fontFamily: 'system-ui, sans-serif', maxWidth: 720,
-  };
 
   // Investigation context: running is managed by the Study controls.
   if (inInvestigation) {
     return (
-      <div style={wrapStyle}>
+      <div className="sr-panel">
         <h3 style={{ marginTop: 0 }}>Setup &amp; Run</h3>
         <p style={{ color: '#6b7280' }}>
           Use the Study&apos;s Run controls to run with this investigation&apos;s emitters.
@@ -290,20 +286,20 @@ export function SetupRunPanel(props: SetupRunPanelProps) {
     : 0;
 
   return (
-    <div style={wrapStyle}>
-      {/* ---- Parameters section ----------------------------------------- */}
+    <div className="sr-panel">
+      {/* ---- Parameters card -------------------------------------------- */}
       {paramKeys.length > 0 && (
-        <section>
-          <h3 style={{ marginTop: 0 }}>Parameters</h3>
-          <div style={{ display: 'grid', gap: 18 }}>
+        <section className="sr-section">
+          <h3>Parameters</h3>
+          <div>
             {paramKeys.map((k) => {
               const pdef = props.parameters[k];
               const id = `cfg-${k}`;
               const val = values[k];
               const onChange = (v: FormValue) => setValues((prev) => ({ ...prev, [k]: v }));
               return (
-                <div key={k}>
-                  <label htmlFor={id} style={{ display: 'block', marginBottom: 4 }}>
+                <div key={k} className="sr-field">
+                  <label htmlFor={id}>
                     <code style={{ fontWeight: 600 }}>{k}</code>
                     <span style={{ color: '#666', marginLeft: 8, fontSize: 12 }}>
                       ({pdef.type})
@@ -319,7 +315,7 @@ export function SetupRunPanel(props: SetupRunPanelProps) {
                       id={id}
                       value={String(val)}
                       onChange={(e) => onChange(e.target.value)}
-                      style={{ fontSize: 13, padding: '4px 8px' }}
+                      className="sr-input"
                     >
                       {pdef.choices.map((c) => (
                         <option key={c} value={c}>{c}</option>
@@ -331,7 +327,7 @@ export function SetupRunPanel(props: SetupRunPanelProps) {
                       rows={Math.max(3, String(val).split('\n').length + 1)}
                       value={String(val)}
                       onChange={(e) => onChange(e.target.value)}
-                      style={{ width: '100%', fontFamily: 'monospace', fontSize: 13, padding: 6 }}
+                      className="sr-input"
                       placeholder="one item per line"
                     />
                   ) : pdef.type === 'bool' ? (
@@ -339,7 +335,7 @@ export function SetupRunPanel(props: SetupRunPanelProps) {
                       id={id}
                       value={String(val)}
                       onChange={(e) => onChange(e.target.value === 'true')}
-                      style={{ fontSize: 13, padding: '4px 8px' }}
+                      className="sr-input"
                     >
                       <option value="true">true</option>
                       <option value="false">false</option>
@@ -351,7 +347,8 @@ export function SetupRunPanel(props: SetupRunPanelProps) {
                       step={pdef.type === 'float' ? 'any' : pdef.type === 'int' ? '1' : undefined}
                       value={String(val)}
                       onChange={(e) => onChange(e.target.value)}
-                      style={{ fontSize: 13, padding: '4px 8px', minWidth: 240 }}
+                      className="sr-input"
+                      style={{ minWidth: 240 }}
                     />
                   )}
                 </div>
@@ -376,100 +373,90 @@ export function SetupRunPanel(props: SetupRunPanelProps) {
               <span style={{ color: '#b91c1c', fontSize: 13 }}>Error: {previewError}</span>
             )}
           </div>
-          <hr style={{ margin: '20px 0', border: 0, borderTop: '1px solid #e5e7eb' }} />
         </section>
       )}
 
-      {/* ---- Steps + Run section ---------------------------------------- */}
-      <section>
-        <h3 style={{ marginTop: 0 }}>Run</h3>
-        <div style={{
-          display: 'flex', gap: 12, alignItems: 'center',
-          marginBottom: 12, flexWrap: 'wrap',
-        }}>
-          <label>
-            Steps{' '}
-            <input
-              type="number" min={1} max={10000} value={steps}
-              onChange={(e) => setSteps(parseInt(e.target.value) || 1)}
-              style={{ width: 70 }} disabled={isRunning}
-            />
-          </label>
-          <button
-            onClick={handleRun}
-            disabled={isRunning || !canRun}
-            style={{
-              padding: '6px 14px', fontSize: 13, fontWeight: 600,
-              background: '#2563eb', color: '#fff', border: 0, borderRadius: 4,
-              cursor: isRunning || !canRun ? 'not-allowed' : 'pointer',
-            }}
-          >
-            {isRunning ? 'Running…' : 'Run'}
-          </button>
-          <small style={{ color: '#666' }}>
-            Emit selections:{' '}
-            {props.emitSet.size === 0
-              ? <em>none — pick stores in the Wiring tab</em>
-              : Array.from(props.emitSet).join(', ')}
+      {/* ---- Run feedback area ------------------------------------------ */}
+      {startError && (
+        <div style={{ color: '#c00', marginBottom: 8 }}>
+          <strong>Could not start run:</strong> {startError}
+        </div>
+      )}
+
+      {isRunning && status && (
+        <div style={{ margin: '8px 0' }}>
+          <div style={{ background: '#e5e7eb', borderRadius: 4, height: 10, overflow: 'hidden' }}>
+            <div style={{ width: `${pct}%`, background: '#3b82f6', height: '100%' }} />
+          </div>
+          <small style={{ color: '#6b7280' }}>
+            Step {status.progress_step} of {status.n_steps ?? '?'} — running detached;
+            safe to reload this tab.
           </small>
         </div>
+      )}
+      {isRunning && !status && (
+        <p style={{ color: '#6b7280' }}>Starting run…</p>
+      )}
 
-        {startError && (
-          <div style={{ color: '#c00', marginTop: 8 }}>
-            <strong>Could not start run:</strong> {startError}
-          </div>
-        )}
-
-        {isRunning && status && (
-          <div style={{ margin: '8px 0' }}>
-            <div style={{ background: '#e5e7eb', borderRadius: 4, height: 10, overflow: 'hidden' }}>
-              <div style={{ width: `${pct}%`, background: '#3b82f6', height: '100%' }} />
-            </div>
-            <small style={{ color: '#6b7280' }}>
-              Step {status.progress_step} of {status.n_steps ?? '?'} — running detached;
-              safe to reload this tab.
-            </small>
-          </div>
-        )}
-        {isRunning && !status && (
-          <p style={{ color: '#6b7280' }}>Starting run…</p>
-        )}
-
-        {status && (status.status === 'failed' || status.status === 'orphaned') && (
-          <div style={{ color: '#c00', marginTop: 8 }}>
-            <p style={{ margin: 0 }}>
-              <strong>Run {status.status}.</strong>{' '}
-              {status.log_path && <span>See log: <code>{status.log_path}</code></span>}
-            </p>
-            {status.error && (
-              <details style={{ marginTop: 6 }}>
-                <summary style={{ cursor: 'pointer', color: '#7f1d1d' }}>Show log excerpt</summary>
-                <pre style={{
-                  background: '#fef2f2', border: '1px solid #fecaca', padding: 10,
-                  fontSize: 11, lineHeight: 1.4, overflow: 'auto', maxHeight: 320,
-                  marginTop: 6, whiteSpace: 'pre-wrap',
-                }}>
-                  {status.error.trim()}
-                </pre>
-              </details>
-            )}
-          </div>
-        )}
-
-        {status?.status === 'completed' && (
-          <p style={{ color: '#6b7280', fontSize: 13, margin: '4px 0 10px' }}>
-            Run complete — <strong>{status.n_steps ?? 0}</strong> steps.
-            Switching to the <strong>Results</strong> tab…
+      {status && (status.status === 'failed' || status.status === 'orphaned') && (
+        <div style={{ color: '#c00', marginBottom: 8 }}>
+          <p style={{ margin: 0 }}>
+            <strong>Run {status.status}.</strong>{' '}
+            {status.log_path && <span>See log: <code>{status.log_path}</code></span>}
           </p>
-        )}
+          {status.error && (
+            <details style={{ marginTop: 6 }}>
+              <summary style={{ cursor: 'pointer', color: '#7f1d1d' }}>Show log excerpt</summary>
+              <pre style={{
+                background: '#fef2f2', border: '1px solid #fecaca', padding: 10,
+                fontSize: 11, lineHeight: 1.4, overflow: 'auto', maxHeight: 320,
+                marginTop: 6, whiteSpace: 'pre-wrap',
+              }}>
+                {status.error.trim()}
+              </pre>
+            </details>
+          )}
+        </div>
+      )}
 
-        {!runId && !startError && (
-          <p style={{ color: '#888' }}>
-            Click <strong>Run</strong> to execute the composite for the chosen number of steps.
-            {paramKeys.length > 0 && ' Current parameter values will be applied automatically.'}
-          </p>
-        )}
-      </section>
+      {status?.status === 'completed' && (
+        <p style={{ color: '#6b7280', fontSize: 13, margin: '4px 0 10px' }}>
+          Run complete — <strong>{status.n_steps ?? 0}</strong> steps.
+          Switching to the <strong>Results</strong> tab…
+        </p>
+      )}
+
+      {!runId && !startError && (
+        <p style={{ color: '#888' }}>
+          Click <strong>Run</strong> to execute the composite for the chosen number of steps.
+          {paramKeys.length > 0 && ' Current parameter values will be applied automatically.'}
+        </p>
+      )}
+
+      {/* ---- Sticky action bar: Steps + Run -------------------------------- */}
+      <div className="sr-actionbar">
+        <label>
+          Steps{' '}
+          <input
+            type="number" min={1} max={10000} value={steps}
+            onChange={(e) => setSteps(parseInt(e.target.value) || 1)}
+            style={{ width: 70 }} disabled={isRunning}
+          />
+        </label>
+        <button
+          onClick={handleRun}
+          disabled={isRunning || !canRun}
+          className="sr-run-btn"
+        >
+          {isRunning ? 'Running…' : 'Run'}
+        </button>
+        <small style={{ color: '#666' }}>
+          Emit selections:{' '}
+          {props.emitSet.size === 0
+            ? <em>none — pick stores in the Wiring tab</em>
+            : Array.from(props.emitSet).join(', ')}
+        </small>
+      </div>
     </div>
   );
 }
