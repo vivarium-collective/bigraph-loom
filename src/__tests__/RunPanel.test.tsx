@@ -1,7 +1,9 @@
 // @vitest-environment jsdom
+// Tests for run lifecycle — migrated to SetupRunPanel when RunPanel was merged
+// into SetupRunPanel (Tasks 5+6).
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
-import { RunPanel } from '../panels/RunPanel';
+import { SetupRunPanel } from '../panels/SetupRunPanel';
 
 beforeEach(() => {
   vi.resetModules();
@@ -28,7 +30,15 @@ function mockFetchSequence(handlers: Record<string, () => any>) {
   });
 }
 
-describe('RunPanel start-then-poll', () => {
+/** Minimum extra props needed by SetupRunPanel beyond the run-specific ones. */
+const PANEL_EXTRAS = {
+  parameters: {},
+  overrides: {},
+  onApplied: () => {},
+  onCompleted: () => {},
+};
+
+describe('SetupRunPanel start-then-poll', () => {
   it('starts a run, polls status, and shows completion', async () => {
     let statusCalls = 0;
     const fetchMock = mockFetchSequence({
@@ -44,7 +54,13 @@ describe('RunPanel start-then-poll', () => {
     });
     vi.stubGlobal('fetch', fetchMock);
 
-    render(<RunPanel compositeId="pkg.composites.demo" emitSet={new Set()} />);
+    render(
+      <SetupRunPanel
+        {...PANEL_EXTRAS}
+        compositeId="pkg.composites.demo"
+        emitSet={new Set()}
+      />
+    );
     fireEvent.click(screen.getByRole('button', { name: 'Run' }));
 
     await waitFor(() => expect(screen.getByText(/run complete/i)).toBeTruthy(),
@@ -64,7 +80,13 @@ describe('RunPanel start-then-poll', () => {
     });
     vi.stubGlobal('fetch', fetchMock);
 
-    render(<RunPanel compositeId="pkg.composites.demo" emitSet={new Set()} />);
+    render(
+      <SetupRunPanel
+        {...PANEL_EXTRAS}
+        compositeId="pkg.composites.demo"
+        emitSet={new Set()}
+      />
+    );
     await waitFor(() =>
       expect(fetchMock).toHaveBeenCalledWith('/api/composite-run/r-prev/status'),
       { timeout: 5000 });

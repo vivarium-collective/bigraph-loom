@@ -1,7 +1,9 @@
 // @vitest-environment jsdom
+// Tests for SetupRunPanel — migrated from ConfigurePanel.test.tsx when
+// ConfigurePanel was merged into SetupRunPanel (Tasks 5+6).
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor, cleanup } from '@testing-library/react';
-import { ConfigurePanel } from '../panels/ConfigurePanel';
+import { SetupRunPanel } from '../panels/SetupRunPanel';
 
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 
@@ -21,14 +23,21 @@ const PARAMS = {
   },
 };
 
-describe('ConfigurePanel', () => {
+/** Minimal required props beyond the per-test ones. */
+const BASE_PROPS = {
+  emitSet: new Set<string>(),
+  onCompleted: () => {},
+  onApplied: () => {},
+};
+
+describe('SetupRunPanel', () => {
   it('renders a textarea for list[string], pre-filled from default', () => {
     render(
-      <ConfigurePanel
+      <SetupRunPanel
+        {...BASE_PROPS}
         compositeId="some.composite.id"
         parameters={PARAMS}
         overrides={{}}
-        onApplied={() => {}}
       />
     );
     // Labels include the parameter name.
@@ -39,14 +48,15 @@ describe('ConfigurePanel', () => {
     expect(ta.value).toBe('BIOMD0000000001');
   });
 
-  it('Apply parses the textarea, POSTs to composite-resolve, calls onApplied', async () => {
+  it('"Preview wiring" parses the textarea, POSTs to composite-resolve, calls onApplied', async () => {
     vi.stubGlobal(
       'fetch',
       mockFetchOk({ state: { fresh: true }, parameters: PARAMS }) as any,
     );
     const onApplied = vi.fn();
     render(
-      <ConfigurePanel
+      <SetupRunPanel
+        {...BASE_PROPS}
         compositeId="x.compare-biomodel"
         parameters={PARAMS}
         overrides={{}}
@@ -55,7 +65,7 @@ describe('ConfigurePanel', () => {
     );
     const ta = screen.getByLabelText(/biomodel_ids/i) as HTMLTextAreaElement;
     fireEvent.change(ta, { target: { value: 'BIOMD0000000001\nBIOMD0000000005\n' } });
-    fireEvent.click(screen.getByText('Apply'));
+    fireEvent.click(screen.getByText('Preview wiring'));
 
     await waitFor(() => expect(onApplied).toHaveBeenCalled());
     const [overrides, state] = onApplied.mock.calls[0];
@@ -81,11 +91,11 @@ describe('ConfigurePanel', () => {
       },
     };
     render(
-      <ConfigurePanel
+      <SetupRunPanel
+        {...BASE_PROPS}
         compositeId="x.baseline"
         parameters={params}
         overrides={{}}
-        onApplied={() => {}}
       />
     );
     const sel = screen.getByLabelText(/emitter/i) as HTMLSelectElement;
@@ -107,7 +117,8 @@ describe('ConfigurePanel', () => {
       },
     };
     render(
-      <ConfigurePanel
+      <SetupRunPanel
+        {...BASE_PROPS}
         compositeId="x.baseline"
         parameters={params}
         overrides={{}}
@@ -116,20 +127,23 @@ describe('ConfigurePanel', () => {
     );
     const sel = screen.getByLabelText(/emitter/i) as HTMLSelectElement;
     fireEvent.change(sel, { target: { value: 'sqlite' } });
-    fireEvent.click(screen.getByText('Apply'));
+    fireEvent.click(screen.getByText('Preview wiring'));
     await waitFor(() => expect(onApplied).toHaveBeenCalled());
     expect(onApplied.mock.calls[0][0]).toEqual({ emitter: 'sqlite' });
   });
 
-  it('no parameters → empty-state message, no inputs', () => {
+  it('no parameters → no parameter inputs, Run button present', () => {
     render(
-      <ConfigurePanel
+      <SetupRunPanel
+        {...BASE_PROPS}
         compositeId="x"
         parameters={{}}
         overrides={{}}
-        onApplied={() => {}}
       />
     );
-    expect(screen.getByText(/no parameters to configure/i)).toBeTruthy();
+    // No "Preview wiring" button when there are no parameters.
+    expect(screen.queryByText(/preview wiring/i)).toBeNull();
+    // The Run button is always present (in the h3 heading and the button).
+    expect(screen.getAllByText('Run').length).toBeGreaterThan(0);
   });
 });
