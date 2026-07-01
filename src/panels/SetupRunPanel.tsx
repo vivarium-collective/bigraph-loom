@@ -79,6 +79,9 @@ export interface SetupRunPanelProps {
   /** Called when the run reaches terminal `completed` status so App can switch
    *  to the Results tab. */
   onCompleted: () => void;
+  /** Called on every status poll tick with the latest run id + downloadable
+   *  flag so App can pass them through to the Results tab. */
+  onRunState?: (s: { runId: string | null; downloadable: boolean }) => void;
 }
 
 const ACTIVE_RUN_KEY = 'bigraph-loom:active-run';
@@ -131,9 +134,11 @@ export function SetupRunPanel(props: SetupRunPanelProps) {
   const onTrajectoryRef = useRef(props.onTrajectory);
   const onVizHtmlRef = useRef(props.onVizHtml);
   const onCompletedRef = useRef(props.onCompleted);
+  const onRunStateRef = useRef(props.onRunState);
   useEffect(() => { onTrajectoryRef.current = props.onTrajectory; }, [props.onTrajectory]);
   useEffect(() => { onVizHtmlRef.current = props.onVizHtml; }, [props.onVizHtml]);
   useEffect(() => { onCompletedRef.current = props.onCompleted; }, [props.onCompleted]);
+  useEffect(() => { onRunStateRef.current = props.onRunState; }, [props.onRunState]);
 
   const stopPolling = useCallback(() => {
     if (pollRef.current) {
@@ -163,6 +168,7 @@ export function SetupRunPanel(props: SetupRunPanelProps) {
         return; // transient — try again next tick
       }
       setStatus(s);
+      onRunStateRef.current?.({ runId: id, downloadable: s.downloadable ?? false });
       if (s.viz_html) onVizHtmlRef.current?.(s.viz_html);
       if (s.status === 'running') {
         void loadTrajectory(id);

@@ -125,6 +125,13 @@ export interface RunStatus {
   error?: string;
   log_path?: string;
   viz_html?: Record<string, { html: string }>;
+  has_analyses?: boolean;
+  has_report?: boolean;
+  downloadable?: boolean;
+}
+
+export function runDownloadUrl(runId: string): string {
+  return `/api/composite-run/${runId}/download`;
 }
 
 export interface RunTrajectory {

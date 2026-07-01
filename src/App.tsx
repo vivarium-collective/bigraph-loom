@@ -109,6 +109,9 @@ export default function App() {
   // Run output, lifted up so Results / Visualizations tabs can read it.
   const [trajectory, setTrajectory] = useState<TrajectoryRow[] | null>(null);
   const [vizHtml, setVizHtml] = useState<Record<string, { html: string }> | null>(null);
+  // Latest run id + downloadable flag, lifted from SetupRunPanel via onRunState.
+  const [activeRunId, setActiveRunId] = useState<string | null>(null);
+  const [downloadable, setDownloadable] = useState(false);
   const readyFiredRef = useRef(false);
   // React Flow instance, captured via onInit, so Re-layout can frame the
   // freshly-consolidated set (App is the ReactFlowProvider's PARENT, so it can't
@@ -145,6 +148,8 @@ export default function App() {
       // A new composite loaded — clear any prior run output.
       setTrajectory(null);
       setVizHtml(null);
+      setActiveRunId(null);
+      setDownloadable(false);
     });
     if (!readyFiredRef.current) {
       readyFiredRef.current = true;
@@ -729,12 +734,15 @@ export default function App() {
               onTrajectory={setTrajectory}
               onVizHtml={setVizHtml}
               onCompleted={() => setTab('results')}
+              onRunState={(s) => { setActiveRunId(s.runId); setDownloadable(s.downloadable); }}
             />
           )}
           {tab === 'results' && (
             <ResultsPanel
               trajectory={trajectory}
               hasRun={trajectory !== null || vizHtml !== null}
+              runId={activeRunId}
+              downloadable={downloadable}
             />
           )}
           {tab === 'visualizations' && (
