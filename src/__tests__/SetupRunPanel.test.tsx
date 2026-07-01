@@ -146,4 +146,27 @@ describe('SetupRunPanel', () => {
     // The Run button is always present (in the h3 heading and the button).
     expect(screen.getAllByText('Run').length).toBeGreaterThan(0);
   });
+
+  it('readOnly disables Run and Preview and makes no fetch calls', () => {
+    const fetchSpy = vi.fn();
+    vi.stubGlobal('fetch', fetchSpy as any);
+    render(
+      <SetupRunPanel
+        {...BASE_PROPS}
+        compositeId="some.composite.id"
+        parameters={PARAMS}
+        overrides={{}}
+        readOnly
+      />
+    );
+    // Form still renders (parameter label present)…
+    expect(screen.getByText((t) => t.includes('biomodel_ids'))).toBeTruthy();
+    // …but Run and Preview are disabled.
+    expect((screen.getByRole('button', { name: /^Run$/i }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole('button', { name: /Preview wiring/i }) as HTMLButtonElement).disabled).toBe(true);
+    // A read-only note is shown.
+    expect(screen.getByText(/read-only|live dashboard/i)).toBeTruthy();
+    // No network calls happened on render.
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
 });

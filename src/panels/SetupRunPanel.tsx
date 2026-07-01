@@ -82,6 +82,9 @@ export interface SetupRunPanelProps {
   /** Called on every status poll tick with the latest run id + downloadable
    *  flag so App can pass them through to the Results tab. */
   onRunState?: (s: { runId: string | null; downloadable: boolean }) => void;
+  /** Read-only posture (static/snapshot mode): render the parameter form but
+   *  disable Run + Preview wiring, since no live dashboard backend exists. */
+  readOnly?: boolean;
 }
 
 const ACTIVE_RUN_KEY = 'bigraph-loom:active-run';
@@ -126,7 +129,7 @@ export function SetupRunPanel(props: SetupRunPanelProps) {
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const inInvestigation = !!(props.runContext && props.runContext.startsWith('investigation:'));
-  const canRun = !!props.compositeId && !inInvestigation;
+  const canRun = !!props.compositeId && !inInvestigation && !props.readOnly;
   const isRunning = status?.status === 'running' || (!!runId && !status);
 
   // Use refs for callbacks so the polling closure always sees the latest
@@ -293,6 +296,15 @@ export function SetupRunPanel(props: SetupRunPanelProps) {
 
   return (
     <div className="sr-panel">
+      {props.readOnly && (
+        <p style={{
+          margin: '0 0 12px', padding: '8px 10px', fontSize: 13,
+          background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 6,
+          color: '#475569',
+        }}>
+          Read-only preview — running requires a live dashboard.
+        </p>
+      )}
       {/* ---- Parameters card -------------------------------------------- */}
       {paramKeys.length > 0 && (
         <section className="sr-section">
@@ -365,7 +377,7 @@ export function SetupRunPanel(props: SetupRunPanelProps) {
           <div style={{ marginTop: 16, display: 'flex', alignItems: 'center', gap: 12 }}>
             <button
               onClick={handlePreviewWiring}
-              disabled={previewBusy || !props.compositeId}
+              disabled={previewBusy || !props.compositeId || !!props.readOnly}
               style={{
                 padding: '6px 14px', fontSize: 13,
                 background: '#fff', color: '#374151',
